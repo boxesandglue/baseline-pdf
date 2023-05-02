@@ -130,10 +130,11 @@ func NewPDFWriter(file io.Writer) *PDF {
 		Minor:            7,
 		NumDestinations:  make(map[int]*NumDest),
 		NameDestinations: make(map[string]*NameDest),
+		objectlocations:  make(map[Objectnumber]int64),
 	}
 	pw.outfile = file
 	pw.nextobject = 1
-	pw.objectlocations = make(map[Objectnumber]int64)
+	pw.objectlocations[0] = 0
 	pw.pages = &Pages{}
 	pw.Printf("%%PDF-%d.%d", pw.Major, pw.Minor)
 	return &pw
@@ -164,6 +165,7 @@ func (pw *PDF) Printf(format string, a ...any) error {
 func (pw *PDF) AddPage(content *Object, dictnum Objectnumber) *Page {
 	pg := &Page{}
 	pg.contentStream = content
+	content.ForceStream = true
 	pg.Dictnum = dictnum
 	pw.pages.Pages = append(pw.pages.Pages, pg)
 	return pg
@@ -479,7 +481,7 @@ func (pw *PDF) Finish() error {
 	}
 	objectChunks := []chunk{}
 	var curchunk *chunk
-	for i := Objectnumber(1); i <= pw.nextobject; i++ {
+	for i := Objectnumber(0); i <= pw.nextobject; i++ {
 		if loc, ok := pw.objectlocations[i]; ok {
 			if curchunk == nil {
 				curchunk = &chunk{
@@ -488,22 +490,25 @@ func (pw *PDF) Finish() error {
 			}
 			curchunk.positions = append(curchunk.positions, loc)
 		} else {
-			objectChunks = append(objectChunks, *curchunk)
-			curchunk = nil
+			if curchunk == nil {
+				// the PDF might be corrupt
+			} else {
+				objectChunks = append(objectChunks, *curchunk)
+				curchunk = nil
+			}
 		}
 	}
 	var str strings.Builder
 
 	for _, chunk := range objectChunks {
-		if chunk.startOnum == 1 {
-			fmt.Fprintf(&str, "0 %d\n", len(chunk.positions)+1)
-			fmt.Fprintln(&str, "0000000000 65535 f ")
-		} else {
-			fmt.Fprintf(&str, "%d %d\n", chunk.startOnum, len(chunk.positions))
-		}
-		for _, pos := range chunk.positions {
-			fmt.Fprintf(&str, "%010d 00000 n \n", pos)
-
+		startOnum := chunk.startOnum
+		fmt.Fprintf(&str, "%d %d\n", chunk.startOnum, len(chunk.positions))
+		for i, pos := range chunk.positions {
+			if int(startOnum)+i == 0 {
+				fmt.Fprintf(&str, "%010d 65536 f \n", pos)
+			} else {
+				fmt.Fprintf(&str, "%010d 00000 n \n", pos)
+			}
 		}
 	}
 
@@ -582,8 +587,8 @@ func (pw *PDF) endObject() Objectnumber {
 	return onum
 }
 
-// ImportImage writes an Image to the PDF
-func (pw *PDF) ImportImage(imp *gofpdi.Importer, pagenumber int) (Objectnumber, string) {
+// importImage writes an Image to the PDF
+func (pw *PDF) importImage(imp *gofpdi.Importer, pagenumber int) (Objectnumber, string) {
 	firstObj := pw.NewObject()
 	imp.SetNextObjectID(int(firstObj.ObjectNumber))
 	if pagenumber == 0 {

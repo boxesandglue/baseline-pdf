@@ -6,6 +6,9 @@
 
 baseline-pdf is a low-level PDF writer for the Go language. It is used in the [boxes and glue typesetting library](https://boxesandglue.dev) but can be used in other projects as well.
 
+This library has a [godoc reference](https://pkg.go.dev/github.com/speedata/baseline-pdf) and a [more verbose manual](https://boxesandglue.dev/baseline).
+
+
 
 # Status
 

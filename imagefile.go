@@ -20,12 +20,17 @@ import (
 )
 
 // Imagefile represents a physical image file. Images to be place in the PDF
-// must be derived from the image
+// must be derived from the image.
 type Imagefile struct {
 	Format           string
 	NumberOfPages    int
 	PageSizes        map[int]map[string]map[string]float64
 	Filename         string
+	ScaleX           float64
+	ScaleY           float64
+	W                int
+	H                int
+	r                io.ReadSeeker
 	pdfimporter      *gofpdi.Importer
 	pw               *PDF
 	imageobject      *Object
@@ -33,11 +38,6 @@ type Imagefile struct {
 	colorspace       string
 	bitsPerComponent string
 	filter           string
-	ScaleX           float64
-	ScaleY           float64
-	W                int
-	H                int
-	r                io.ReadSeeker
 	trns             []byte
 	smask            []byte
 	pal              []byte
@@ -68,7 +68,6 @@ func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
 		Format:        format,
 		id:            <-ids,
 		pw:            pw,
-		imageobject:   pw.NewObject(),
 		r:             r,
 		ScaleX:        1,
 		ScaleY:        1,
@@ -145,6 +144,29 @@ func tryParsePDF(pw *PDF, r io.ReadSeeker, filename string) (*Imagefile, error) 
 		return nil, err
 	}
 	return imgf, nil
+}
+
+// GetPDFBoxDimensions returns the dimensions for the given box. Box must be one
+// of "/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox".
+func (imgf *Imagefile) GetPDFBoxDimensions(p int, box string) (map[string]float64, error) {
+	bx := imgf.PageSizes[p][box]
+	if len(bx) == 0 {
+		if box == "/CropBox" {
+			return imgf.PageSizes[p]["/MediaBox"], nil
+		}
+		switch box {
+		case "/ArtBox":
+			return imgf.GetPDFBoxDimensions(p, "/BleedBox")
+		case "/BleedBox":
+			return imgf.GetPDFBoxDimensions(p, "/TrimBox")
+		case "/TrimBox":
+			return imgf.GetPDFBoxDimensions(p, "/MediaBox")
+		default:
+			// unknown box dimensions
+			return nil, fmt.Errorf("could not find the box dimensions for the image")
+		}
+	}
+	return bx, nil
 }
 
 // InternalName returns a PDF usable name such as /F1

@@ -103,6 +103,7 @@ type Object struct {
 	Dictionary   Dict
 	Array        []any
 	Raw          bool // Data holds everything between object number and endobj
+	ForceStream  bool
 	pdfwriter    *PDF
 	compress     bool // for streams
 	comment      string
@@ -158,7 +159,7 @@ func (obj *Object) Save() error {
 		obj.pdfwriter.endObject()
 		return nil
 	}
-	hasData := obj.Data.Len() > 0
+	hasData := obj.Data.Len() > 0 || obj.ForceStream
 	if hasData {
 		if obj.Dictionary == nil {
 			obj.Dictionary = Dict{}
