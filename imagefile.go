@@ -146,27 +146,55 @@ func tryParsePDF(pw *PDF, r io.ReadSeeker, filename string) (*Imagefile, error) 
 	return imgf, nil
 }
 
+// PDF boxes (crop, trim,...) should not be larger than the mediabox.
+func intersectBox(bx map[string]float64, mediabox map[string]float64) map[string]float64 {
+	newbox := make(map[string]float64)
+	for k, v := range bx {
+		newbox[k] = v
+	}
+
+	if bx["lly"] < mediabox["lly"] {
+		newbox["lly"] = mediabox["lly"]
+	}
+	if bx["llx"] < mediabox["llx"] {
+		newbox["llx"] = mediabox["llx"]
+	}
+	if bx["ury"] > mediabox["ury"] {
+		newbox["ury"] = mediabox["ury"]
+	}
+	if bx["urx"] > mediabox["urx"] {
+		newbox["urx"] = mediabox["urx"]
+	}
+	newbox["x"] = newbox["llx"]
+	newbox["y"] = newbox["lly"]
+	newbox["w"] = newbox["urx"] - newbox["llx"]
+	newbox["h"] = newbox["ury"] - newbox["lly"]
+	return newbox
+}
+
 // GetPDFBoxDimensions returns the dimensions for the given box. Box must be one
 // of "/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox".
-func (imgf *Imagefile) GetPDFBoxDimensions(p int, box string) (map[string]float64, error) {
-	bx := imgf.PageSizes[p][box]
+func (imgf *Imagefile) GetPDFBoxDimensions(p int, boxname string) (map[string]float64, error) {
+	if p > imgf.NumberOfPages {
+		return nil, fmt.Errorf("cannot get the page number %d of the PDF, the PDF has only %d page(s)", p, imgf.NumberOfPages)
+	}
+	bx := imgf.PageSizes[p][boxname]
 	if len(bx) == 0 {
-		if box == "/CropBox" {
+		if boxname == "/CropBox" {
 			return imgf.PageSizes[p]["/MediaBox"], nil
 		}
-		switch box {
-		case "/ArtBox":
-			return imgf.GetPDFBoxDimensions(p, "/BleedBox")
-		case "/BleedBox":
-			return imgf.GetPDFBoxDimensions(p, "/TrimBox")
-		case "/TrimBox":
-			return imgf.GetPDFBoxDimensions(p, "/MediaBox")
+		switch boxname {
+		case "/ArtBox", "/BleedBox", "/TrimBox":
+			return imgf.GetPDFBoxDimensions(p, "/CropBox")
 		default:
 			// unknown box dimensions
-			return nil, fmt.Errorf("could not find the box dimensions for the image")
+			return nil, fmt.Errorf("could not find the box dimensions for the image (box %s)", boxname)
 		}
 	}
-	return bx, nil
+	if boxname == "/MediaBox" {
+		return bx, nil
+	}
+	return intersectBox(bx, imgf.PageSizes[p]["/MediaBox"]), nil
 }
 
 // InternalName returns a PDF usable name such as /F1
