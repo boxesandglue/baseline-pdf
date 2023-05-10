@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/speedata/gofpdi"
 )
 
 // Objectnumber represents a PDF object number
@@ -585,25 +583,4 @@ func (pw *PDF) endObject() Objectnumber {
 	pw.eol()
 	pw.Println("endobj")
 	return onum
-}
-
-// importImage writes an Image to the PDF
-func (pw *PDF) importImage(imp *gofpdi.Importer, pagenumber int) (Objectnumber, string) {
-	firstObj := pw.NewObject()
-	imp.SetNextObjectID(int(firstObj.ObjectNumber))
-	if pagenumber == 0 {
-		pagenumber = 1
-	}
-	for i, str := range imp.GetImportedObjects() {
-		bb := bytes.NewBuffer(str)
-		if i == 1 {
-			firstObj.Data = bb
-			firstObj.Save()
-		} else {
-			obj := pw.NewObject()
-			obj.Data = bb
-			obj.Save()
-		}
-	}
-	return firstObj.ObjectNumber, "/Im1"
 }

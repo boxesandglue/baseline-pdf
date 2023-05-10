@@ -30,6 +30,8 @@ type Imagefile struct {
 	ScaleY           float64
 	W                int
 	H                int
+	Box              string
+	PageNumber       int
 	r                io.ReadSeeker
 	pdfimporter      *gofpdi.Importer
 	pw               *PDF
@@ -45,8 +47,8 @@ type Imagefile struct {
 	data             []byte
 }
 
-// LoadImageFile loads an image from the disc.
-func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
+// LoadImageFileWithBox loads an image from the disc with the given box and page number.
+func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) (*Imagefile, error) {
 	if l := pw.Logger; l != nil {
 		l.Infof("Load image %s", filename)
 	}
@@ -57,7 +59,7 @@ func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
 	imgCfg, format, err := image.DecodeConfig(r)
 	if errors.Is(err, image.ErrFormat) {
 		// let's try PDF
-		return tryParsePDF(pw, r, filename)
+		return tryParsePDFWithBox(pw, r, filename, box, pagenumber)
 	}
 	if err != nil {
 		return nil, err
@@ -84,6 +86,11 @@ func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
 	return imgf, nil
 }
 
+// LoadImageFile loads an image from the disc.
+func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
+	return LoadImageFileWithBox(pw, filename, "/MediaBox", 1)
+}
+
 func (imgf *Imagefile) parseJPG(imgCfg image.Config) error {
 	switch imgCfg.ColorModel {
 	case color.YCbCrModel:
@@ -103,7 +110,7 @@ func (imgf *Imagefile) parseJPG(imgCfg image.Config) error {
 	return nil
 }
 
-func tryParsePDF(pw *PDF, r io.ReadSeeker, filename string) (*Imagefile, error) {
+func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, pagenumber int) (*Imagefile, error) {
 	r.Seek(0, io.SeekStart)
 	b, err := readBytes(r, 4)
 	if err != nil {
@@ -114,11 +121,13 @@ func tryParsePDF(pw *PDF, r io.ReadSeeker, filename string) (*Imagefile, error) 
 		return nil, fmt.Errorf("%w: %s", image.ErrFormat, filename)
 	}
 	imgf := &Imagefile{
-		Filename: filename,
-		Format:   "pdf",
-		id:       <-ids,
-		pw:       pw,
-		r:        r,
+		Filename:   filename,
+		Format:     "pdf",
+		Box:        box,
+		PageNumber: pagenumber,
+		id:         <-ids,
+		pw:         pw,
+		r:          r,
 	}
 
 	imgf.pdfimporter = gofpdi.NewImporter()
@@ -130,19 +139,26 @@ func tryParsePDF(pw *PDF, r io.ReadSeeker, filename string) (*Imagefile, error) 
 		}
 		return int(pw.NewObject().ObjectNumber)
 	}
-	imgf.pdfimporter.SetObjIdGetter(f)
+	imgf.pdfimporter.SetObjIDGetter(f)
 	imgf.pdfimporter.SetSourceStream(r)
+	if imgf.NumberOfPages, err = imgf.pdfimporter.GetNumPages(); err != nil {
+		return nil, err
+	}
+
 	ps, err := imgf.pdfimporter.GetPageSizes()
 	if err != nil {
 		return nil, err
 	}
 	imgf.PageSizes = ps
-	box := ps[1]["/MediaBox"]
-	imgf.ScaleX = float64(box["w"])
-	imgf.ScaleY = float64(box["h"])
-	if imgf.NumberOfPages, err = imgf.pdfimporter.GetNumPages(); err != nil {
+	// pbox := ps[pagenumber][box]
+	pbox, err := imgf.GetPDFBoxDimensions(pagenumber, box)
+	if err != nil {
 		return nil, err
 	}
+
+	imgf.ScaleX = float64(pbox["w"])
+	imgf.ScaleY = float64(pbox["h"])
+
 	return imgf, nil
 }
 
@@ -202,33 +218,28 @@ func (imgf *Imagefile) InternalName() string {
 	return fmt.Sprintf("/ImgBag%d", imgf.id)
 }
 
-func (imgf *Imagefile) finish() error {
-	pw := imgf.pw
-	if l := pw.Logger; l != nil {
-		l.Infof("Write image %s to PDF", imgf.Filename)
+func finishPDF(imgf *Imagefile) error {
+	_, err := imgf.pdfimporter.ImportPage(imgf.PageNumber, imgf.Box)
+	if err != nil {
+		return err
 	}
-	imgo := imgf.imageobject
 
-	if imgf.Format == "pdf" {
-		_, err := imgf.pdfimporter.ImportPage(1, "/MediaBox")
-		if err != nil {
-			return err
-		}
-
-		_, err = imgf.pdfimporter.PutFormXobjects()
-		if err != nil {
-			return err
-		}
-
-		imported := imgf.pdfimporter.GetImportedObjects()
-		for i, v := range imported {
-			o := pw.NewObjectWithNumber(Objectnumber(i))
-			o.Raw = true
-			o.Data = bytes.NewBuffer(v)
-			o.Save()
-		}
-		return nil
+	_, err = imgf.pdfimporter.PutFormXobjects()
+	if err != nil {
+		return err
 	}
+
+	imported := imgf.pdfimporter.GetImportedObjects()
+	for i, v := range imported {
+		o := imgf.pw.NewObjectWithNumber(Objectnumber(i))
+		o.Raw = true
+		o.Data = bytes.NewBuffer(v)
+		o.Save()
+	}
+	return nil
+}
+
+func finishBitmap(imgf *Imagefile) error {
 	d := Dict{
 		"Type":             "/XObject",
 		"Subtype":          "/Image",
@@ -241,17 +252,19 @@ func (imgf *Imagefile) finish() error {
 
 	if imgf.colorspace == "Indexed" {
 		size := len(imgf.pal)/3 - 1
-		palObj := pw.NewObject()
+		palObj := imgf.pw.NewObject()
 		palObj.Data.Write(imgf.pal)
 		palObj.SetCompression(9)
 		if err := palObj.Save(); err != nil {
 			return err
 		}
-		d["/ColorSpace"] = fmt.Sprintf("[/Indexed /DeviceRGB %d %s]", size, palObj.ObjectNumber.Ref())
+		d["ColorSpace"] = fmt.Sprintf("[/Indexed /DeviceRGB %d %s]", size, palObj.ObjectNumber.Ref())
 		if imgf.decodeParms != "" {
 			d["/DecodeParms"] = fmt.Sprintf("<<%s>>", imgf.decodeParms)
 		}
 	}
+	imgo := imgf.imageobject
+
 	imgo.Dict(d)
 	switch imgf.Format {
 	case "png":
@@ -267,4 +280,18 @@ func (imgf *Imagefile) finish() error {
 	imgo.Save()
 
 	return nil
+
+}
+
+func (imgf *Imagefile) finish() error {
+	if l := imgf.pw.Logger; l != nil {
+		l.Infof("Write image %s to PDF", imgf.Filename)
+	}
+	if imgf.Format == "pdf" {
+		return finishPDF(imgf)
+	}
+	if imgf.imageobject == nil {
+		imgf.imageobject = imgf.pw.NewObject()
+	}
+	return finishBitmap(imgf)
 }

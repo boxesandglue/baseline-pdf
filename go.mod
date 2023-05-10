@@ -3,7 +3,7 @@ module github.com/speedata/baseline-pdf
 go 1.20
 
 require (
-	github.com/speedata/gofpdi v1.0.15
+	github.com/speedata/gofpdi v1.0.17
 	github.com/speedata/textlayout v0.0.0-20221127101343-91e6153d36c5
 )
 
