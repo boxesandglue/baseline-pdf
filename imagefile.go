@@ -86,7 +86,8 @@ func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) 
 	return imgf, nil
 }
 
-// LoadImageFile loads an image from the disc.
+// LoadImageFile loads an image from the disc. For PDF files it defaults to page
+// 1 and the /MediaBox.
 func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
 	return LoadImageFileWithBox(pw, filename, "/MediaBox", 1)
 }
