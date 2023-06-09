@@ -68,17 +68,22 @@ func readBytes(f io.Reader, len int) ([]byte, error) {
 	return b, nil
 }
 
-func compress(data []byte) ([]byte, error) {
-	var buff bytes.Buffer
-	zwr := zlib.NewWriter(&buff)
-	var err error
-	_, err = zwr.Write(data)
+func readByte(f io.Reader) (byte, error) {
+	b := make([]byte, 1)
+	_, err := f.Read(b)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	zwr.Close()
-	return buff.Bytes(), nil
+	return b[0], nil
 }
+
+const (
+	colGrayScale          byte = 0
+	colTrueColor          byte = 2
+	colIndexedColor       byte = 3
+	colGrayScaleWithAlpha byte = 4
+	colTrueColorWithAlpha byte = 6
+)
 
 // from gopdf
 func (imgf *Imagefile) parsePNG() error {
@@ -112,53 +117,53 @@ func (imgf *Imagefile) parsePNG() error {
 	imgf.W = w
 	imgf.H = h
 
-	bpc, err := readBytes(imgf.r, 1)
+	bpc, err := readByte(imgf.r)
 	if err != nil {
 		return err
 	}
 
-	if bpc[0] > 8 {
+	if bpc > 8 {
 		return errors.New("16-bit depth not supported")
 	}
 
-	ct, err := readBytes(imgf.r, 1)
+	ct, err := readByte(imgf.r)
 	if err != nil {
 		return err
 	}
 
 	var colspace string
-	switch ct[0] {
-	case 0, 4:
+	switch ct {
+	case colGrayScale, colGrayScaleWithAlpha:
 		colspace = "DeviceGray"
-	case 2, 6:
+	case colTrueColor, colTrueColorWithAlpha:
 		colspace = "DeviceRGB"
-	case 3:
+	case colIndexedColor:
 		colspace = "Indexed"
 	default:
 		return errors.New("Unknown color type")
 	}
 
-	compressionMethod, err := readBytes(imgf.r, 1)
+	compressionMethod, err := readByte(imgf.r)
 	if err != nil {
 		return err
 	}
-	if compressionMethod[0] != 0 {
+	if compressionMethod != 0 {
 		return errors.New("Unknown compression method")
 	}
 
-	filterMethod, err := readBytes(imgf.r, 1)
+	filterMethod, err := readByte(imgf.r)
 	if err != nil {
 		return err
 	}
-	if filterMethod[0] != 0 {
+	if filterMethod != 0 {
 		return errors.New("Unknown filter method")
 	}
 
-	interlacing, err := readBytes(imgf.r, 1)
+	interlacing, err := readByte(imgf.r)
 	if err != nil {
 		return err
 	}
-	if interlacing[0] != 0 {
+	if interlacing != 0 {
 		return errors.New("Interlacing not supported")
 	}
 
@@ -177,7 +182,6 @@ func (imgf *Imagefile) parsePNG() error {
 		}
 		n := int(un)
 		typ, err := readBytes(imgf.r, 4)
-		//fmt.Printf(">>>>%+v-%s-%d\n", typ, string(typ), n)
 		if err != nil {
 			return err
 		}
@@ -196,9 +200,9 @@ func (imgf *Imagefile) parsePNG() error {
 				return err
 			}
 
-			if ct[0] == 0 {
+			if ct == colGrayScale {
 				trns = []byte{(t[1])}
-			} else if ct[0] == 2 {
+			} else if ct == colTrueColor {
 				trns = []byte{t[1], t[3], t[5]}
 			} else {
 				pos := strings.Index(string(t), "\x00")
@@ -245,19 +249,26 @@ func (imgf *Imagefile) parsePNG() error {
 	}
 
 	imgf.colorspace = colspace
-	imgf.bitsPerComponent = fmt.Sprintf("%d", int(bpc[0]))
-	imgf.filter = "FlateDecode"
+	imgf.bitsPerComponent = fmt.Sprintf("%d", bpc)
 
-	colors := 1
-	if colspace == "DeviceRGB" {
-		colors = 3
+	imgf.decodeParms = Dict{
+		"Predictor": 15,
+		"Columns":   w,
 	}
-	imgf.decodeParms = fmt.Sprintf("/Predictor 15 /Colors  %d /BitsPerComponent %s /Columns %d", colors, imgf.bitsPerComponent, w)
+	if colspace == "DeviceRGB" {
+		imgf.decodeParms["Colors"] = 3
+	}
+	if bpc != 8 {
+		imgf.decodeParms["BitsPerComponent"] = imgf.bitsPerComponent
 
-	if ct[0] < 4 {
+	}
+
+	if ct < colGrayScaleWithAlpha {
+		// no alpha
 		imgf.data = data
 		return nil
 	}
+
 	zipReader, err := zlib.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -270,7 +281,7 @@ func (imgf *Imagefile) parsePNG() error {
 
 	var color []byte
 	var alpha []byte
-	if ct[0] == 4 {
+	if ct == colGrayScaleWithAlpha {
 		// Gray image
 		length := 2 * w
 		i := 0
@@ -290,7 +301,7 @@ func (imgf *Imagefile) parsePNG() error {
 			i++
 		}
 	} else {
-		// RGB image
+		// RGB image with alpha
 		length := 4 * w
 		i := 0
 		for i < h {
@@ -308,15 +319,28 @@ func (imgf *Imagefile) parsePNG() error {
 
 			i++
 		}
-		imgf.smask, err = compress(alpha)
-		if err != nil {
-			return err
-		}
-
-		imgf.data, err = compress(color)
-		if err != nil {
-			return err
-		}
 	}
+	// alpha and color are non-compressed
+	imgf.smask = alpha
+	if imgf.data, err = compress(color); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func compress(data []byte) ([]byte, error) {
+	var results []byte
+	var buff bytes.Buffer
+	zwr, err := zlib.NewWriterLevel(&buff, zlib.BestSpeed)
+
+	if err != nil {
+		return results, err
+	}
+	_, err = zwr.Write(data)
+	if err != nil {
+		return nil, err
+	}
+	zwr.Close()
+	return buff.Bytes(), nil
 }

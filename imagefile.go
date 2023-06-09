@@ -39,11 +39,10 @@ type Imagefile struct {
 	id               int
 	colorspace       string
 	bitsPerComponent string
-	filter           string
 	trns             []byte
 	smask            []byte
 	pal              []byte
-	decodeParms      string
+	decodeParms      Dict
 	data             []byte
 }
 
@@ -105,10 +104,31 @@ func (imgf *Imagefile) parseJPG(imgCfg image.Config) error {
 	}
 
 	imgf.bitsPerComponent = "8"
-	imgf.filter = "DCTDecode"
 	imgf.W = imgCfg.Width
 	imgf.H = imgCfg.Height
 	return nil
+}
+
+func (imgf *Imagefile) createSMaskObject() Objectnumber {
+	d := Dict{
+		"Type":             "/XObject",
+		"Subtype":          "/Image",
+		"BitsPerComponent": imgf.bitsPerComponent,
+		"ColorSpace":       "/" + imgf.colorspace,
+		"Width":            fmt.Sprintf("%d", imgf.W),
+		"Height":           fmt.Sprintf("%d", imgf.H),
+	}
+	if imgf.decodeParms != nil {
+		d["/DecodeParms"] = imgf.decodeParms
+	}
+
+	sm := imgf.pw.NewObject()
+	sm.Dict(d)
+	sm.SetCompression(9)
+	// imgf.smask is non-compressed data
+	sm.Data.Write(imgf.smask)
+	sm.Save()
+	return sm.ObjectNumber
 }
 
 func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, pagenumber int) (*Imagefile, error) {
@@ -240,6 +260,13 @@ func finishPDF(imgf *Imagefile) error {
 	return nil
 }
 
+func haveSMask(imginfo *Imagefile) bool {
+	if imginfo.smask != nil && len(imginfo.smask) > 0 {
+		return true
+	}
+	return false
+}
+
 func finishBitmap(imgf *Imagefile) error {
 	d := Dict{
 		"Type":             "/XObject",
@@ -248,29 +275,46 @@ func finishBitmap(imgf *Imagefile) error {
 		"ColorSpace":       "/" + imgf.colorspace,
 		"Width":            fmt.Sprintf("%d", imgf.W),
 		"Height":           fmt.Sprintf("%d", imgf.H),
-		"Filter":           "/" + imgf.filter,
+	}
+
+	if imgf.trns != nil && len(imgf.trns) > 0 {
+		j := 0
+		content := []byte{}
+		max := len(imgf.trns)
+		for j < max {
+			content = append(content, imgf.trns[j])
+			content = append(content, imgf.trns[j])
+			j++
+		}
+		d["Mask"] = content
+	}
+	if haveSMask(imgf) {
+		objnum := imgf.createSMaskObject()
+		d["SMask"] = objnum.Ref()
 	}
 
 	if imgf.colorspace == "Indexed" {
 		size := len(imgf.pal)/3 - 1
 		palObj := imgf.pw.NewObject()
 		palObj.Data.Write(imgf.pal)
-		palObj.SetCompression(9)
 		if err := palObj.Save(); err != nil {
 			return err
 		}
 		d["ColorSpace"] = fmt.Sprintf("[/Indexed /DeviceRGB %d %s]", size, palObj.ObjectNumber.Ref())
-		if imgf.decodeParms != "" {
-			d["/DecodeParms"] = fmt.Sprintf("<<%s>>", imgf.decodeParms)
-		}
+	}
+	if imgf.decodeParms != nil {
+		d["/DecodeParms"] = imgf.decodeParms
 	}
 	imgo := imgf.imageobject
 
 	imgo.Dict(d)
 	switch imgf.Format {
 	case "png":
+		// imgf.data is /FlateDecoded compressed, so we need to add the Filter entry:
+		imgo.Dictionary["Filter"] = "/FlateDecode"
 		imgo.Data = bytes.NewBuffer(imgf.data)
 	case "jpeg":
+		imgo.Dictionary["Filter"] = "/DCTDecode"
 		imgf.r.Seek(0, io.SeekStart)
 		data, err := io.ReadAll(imgf.r)
 		if err != nil {
