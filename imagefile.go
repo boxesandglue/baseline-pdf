@@ -46,7 +46,16 @@ type Imagefile struct {
 	data             []byte
 }
 
-// LoadImageFileWithBox loads an image from the disc with the given box and page number.
+// SortImagefile is used to sort the order of the written images in the PDF
+// file to create reproducible builds.
+type SortImagefile []*Imagefile
+
+func (a SortImagefile) Len() int           { return len(a) }
+func (a SortImagefile) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a SortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filename }
+
+// LoadImageFileWithBox loads an image from the disc with the given box and page
+// number.
 func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) (*Imagefile, error) {
 	if l := pw.Logger; l != nil {
 		l.Infof("Load image %s", filename)
@@ -119,7 +128,7 @@ func (imgf *Imagefile) createSMaskObject() Objectnumber {
 		"Height":           fmt.Sprintf("%d", imgf.H),
 	}
 	if imgf.decodeParms != nil {
-		d["/DecodeParms"] = imgf.decodeParms
+		d["DecodeParms"] = imgf.decodeParms
 	}
 
 	sm := imgf.pw.NewObject()

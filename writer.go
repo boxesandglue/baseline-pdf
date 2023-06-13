@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -38,6 +39,21 @@ func (ary Array) String() string {
 // Name represents a PDF name such as Adobe Green. The String() method prepends
 // a / (slash) to the name if not present.
 type Name string
+
+// SortByName implements the sorting sequence.
+type SortByName []Name
+
+func (a SortByName) Len() int      { return len(a) }
+func (a SortByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a SortByName) Less(i, j int) bool {
+	if a[i] == "Type" {
+		return true
+	} else if a[j] == "Type" {
+		return false
+	}
+	return a[i] < a[j]
+
+}
 
 func (n Name) String() string {
 	a := strings.NewReplacer(" ", "#20")
@@ -108,7 +124,7 @@ type PDF struct {
 	DefaultPageHeight float64
 	Colorspaces       []*Separation
 	NumDestinations   map[int]*NumDest
-	NameDestinations  map[string]*NameDest
+	NameDestinations  []*NameDest
 	Outlines          []*Outline
 	Major             uint // Major version. Should be 1.
 	Minor             uint // Minor version. Just for information purposes. No checks are done.
@@ -127,7 +143,7 @@ func NewPDFWriter(file io.Writer) *PDF {
 		Major:            1,
 		Minor:            7,
 		NumDestinations:  make(map[int]*NumDest),
-		NameDestinations: make(map[string]*NameDest),
+		NameDestinations: make([]*NameDest, 0),
 		objectlocations:  make(map[Objectnumber]int64),
 	}
 	pw.outfile = file
@@ -205,8 +221,15 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 
 	//  We need to know in advance where the parent object is written (/Pages)
 	pagesObj := pw.NewObject()
+
 	// write out all images to the PDF
-	for img := range usedImages {
+	// In order to create reproducible PDFs, let's write the image in a certain order.
+	sortedImages := make([]*Imagefile, 0, len(usedImages))
+	for k := range usedImages {
+		sortedImages = append(sortedImages, k)
+	}
+	sort.Sort(SortImagefile(sortedImages))
+	for _, img := range sortedImages {
 		img.finish()
 	}
 
@@ -215,14 +238,11 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	}
 	for _, page := range pw.pages.Pages {
 		obj := pw.NewObjectWithNumber(page.Dictnum)
-
-		var res []string
+		fnts := Dict{}
 		if len(page.Faces) > 0 {
-			res = append(res, "<< ")
 			for _, face := range page.Faces {
-				res = append(res, fmt.Sprintf("%s %s", face.InternalName(), face.fontobject.ObjectNumber.Ref()))
+				fnts[Name(face.InternalName())] = face.fontobject.ObjectNumber.Ref()
 			}
-			res = append(res, " >>")
 		}
 
 		resHash := Dict{}
@@ -230,7 +250,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			for _, face := range page.Faces {
 				usedFaces[face] = true
 			}
-			resHash["Font"] = strings.Join(res, " ")
+			resHash["Font"] = fnts
 		}
 		if len(pw.Colorspaces) > 0 {
 			colorspace := Dict{}
@@ -392,8 +412,13 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	catalog.Save()
 
 	// write out all font descriptors and files into the PDF
-	for fnt := range usedFaces {
-		fnt.finish()
+	sortedFaces := make([]*Face, 0, len(usedFaces))
+	for k := range usedFaces {
+		sortedFaces = append(sortedFaces, k)
+	}
+	sort.Sort(SortByFaceID(sortedFaces))
+	for _, f := range sortedFaces {
+		f.finish()
 	}
 
 	return catalog.ObjectNumber, nil
@@ -401,7 +426,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 
 func (pw *PDF) writeDestObj(page Objectnumber, x, y float64) (Objectnumber, error) {
 	obj := pw.NewObject()
-	dest := fmt.Sprintf("[%s /XYZ %g %g null]", page.Ref(), x, y)
+	dest := fmt.Sprintf("[%s /XYZ %0.5g %0.5g null]", page.Ref(), x, y)
 	obj.Dict(Dict{
 		"D": dest,
 	})
@@ -548,8 +573,13 @@ func HashToString(h Dict, level int) string {
 	var b bytes.Buffer
 	b.WriteString(strings.Repeat("  ", level))
 	b.WriteString("<<\n")
-	for k, v := range h {
-		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat("  ", level+1), k, v))
+	keys := make([]Name, 0, len(h))
+	for v := range h {
+		keys = append(keys, v)
+	}
+	sort.Sort(SortByName(keys))
+	for _, key := range keys {
+		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat("  ", level+1), key, h[key]))
 	}
 	b.WriteString(strings.Repeat("  ", level))
 	b.WriteString(">>")
