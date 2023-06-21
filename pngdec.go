@@ -258,6 +258,12 @@ func (imgf *Imagefile) parsePNG() error {
 	if colspace == "DeviceRGB" {
 		imgf.decodeParms["Colors"] = 3
 	}
+	imgf.decodeParmsSmask = Dict{
+		"Predictor": 15,
+		"Columns":   w,
+		"Colors":    1,
+	}
+
 	if bpc != 8 {
 		imgf.decodeParms["BitsPerComponent"] = imgf.bitsPerComponent
 

@@ -43,6 +43,7 @@ type Imagefile struct {
 	smask            []byte
 	pal              []byte
 	decodeParms      Dict
+	decodeParmsSmask Dict
 	data             []byte
 }
 
@@ -123,12 +124,12 @@ func (imgf *Imagefile) createSMaskObject() Objectnumber {
 		"Type":             "/XObject",
 		"Subtype":          "/Image",
 		"BitsPerComponent": imgf.bitsPerComponent,
-		"ColorSpace":       "/" + imgf.colorspace,
+		"ColorSpace":       "/DeviceGray",
 		"Width":            fmt.Sprintf("%d", imgf.W),
 		"Height":           fmt.Sprintf("%d", imgf.H),
 	}
-	if imgf.decodeParms != nil {
-		d["DecodeParms"] = imgf.decodeParms
+	if imgf.decodeParmsSmask != nil {
+		d["DecodeParms"] = imgf.decodeParmsSmask
 	}
 
 	sm := imgf.pw.NewObject()
