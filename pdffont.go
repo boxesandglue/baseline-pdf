@@ -41,7 +41,7 @@ type Face struct {
 	Cmap         fonts.Cmap
 	toRune       map[fonts.GID]rune
 	toGlyphIndex map[rune]fonts.GID
-	filename     string
+	Filename     string
 	usedChar     map[int]bool
 	fontobject   *Object
 	pw           *PDF
@@ -78,7 +78,7 @@ func fillFaceObject(id string, hbFace harfbuzz.Face) (*Face, error) {
 		FaceID:       <-ids,
 		UnitsPerEM:   int32(hbFace.Upem()),
 		HarfbuzzFont: harfbuzz.NewFont(hbFace),
-		filename:     id,
+		Filename:     id,
 		toRune:       make(map[fonts.GID]rune),
 		toGlyphIndex: make(map[rune]fonts.GID),
 		usedChar:     make(map[int]bool),
@@ -156,7 +156,7 @@ func (face *Face) finish() error {
 	var err error
 	pdfwriter := face.pw
 	if l := pdfwriter.Logger; l != nil {
-		l.Infof("Write font %s to PDF", face.filename)
+		l.Infof("Write font %s to PDF", face.Filename)
 	}
 	fnt := face.HarfbuzzFont.Face()
 	subset := make([]fonts.GID, len(face.usedChar))
