@@ -59,7 +59,7 @@ func (a SortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filenam
 // number.
 func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) (*Imagefile, error) {
 	if l := pw.Logger; l != nil {
-		l.Infof("Load image %s", filename)
+		l.Info("Load image", "filename", filename)
 	}
 	r, err := os.Open(filename)
 	if err != nil {
@@ -340,7 +340,7 @@ func finishBitmap(imgf *Imagefile) error {
 
 func (imgf *Imagefile) finish() error {
 	if l := imgf.pw.Logger; l != nil {
-		l.Infof("Write image %s to PDF", imgf.Filename)
+		l.Info("Write image to PDF", "filename", imgf.Filename)
 	}
 	if imgf.Format == "pdf" {
 		return finishPDF(imgf)

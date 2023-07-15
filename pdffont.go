@@ -109,7 +109,7 @@ func LoadFace(pw *PDF, filename string, idx int) (*Face, error) {
 		return nil, err
 	}
 	if l := pw.Logger; l != nil {
-		l.Infof("Load font %s", filename)
+		l.Info("Load font", "filename", filename)
 	}
 	fnt, err := truetype.Load(r)
 	if err != nil {
@@ -156,7 +156,7 @@ func (face *Face) finish() error {
 	var err error
 	pdfwriter := face.pw
 	if l := pdfwriter.Logger; l != nil {
-		l.Infof("Write font %s to PDF", face.Filename)
+		l.Info("Write font to PDF", "font", face.Filename)
 	}
 	fnt := face.HarfbuzzFont.Face()
 	subset := make([]fonts.GID, len(face.usedChar))

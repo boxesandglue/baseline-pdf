@@ -7,6 +7,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"golang.org/x/exp/slog"
 )
 
 // Objectnumber represents a PDF object number
@@ -113,7 +115,7 @@ type Outline struct {
 
 // Logger logs font loading and writing.
 type Logger interface {
-	Infof(string, ...any)
+	Info(string, ...any)
 }
 
 // PDF is the central point of writing a PDF file.
@@ -128,7 +130,7 @@ type PDF struct {
 	Outlines          []*Outline
 	Major             uint // Major version. Should be 1.
 	Minor             uint // Minor version. Just for information purposes. No checks are done.
-	Logger            Logger
+	Logger            *slog.Logger
 	outfile           io.Writer
 	nextobject        Objectnumber
 	objectlocations   map[Objectnumber]int64
