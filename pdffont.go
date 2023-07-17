@@ -108,9 +108,7 @@ func LoadFace(pw *PDF, filename string, idx int) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
-	if l := pw.Logger; l != nil {
-		l.Info("Load font", "filename", filename)
-	}
+	Logger.Info("Load font", "filename", filename)
 	fnt, err := truetype.Load(r)
 	if err != nil {
 		return nil, err
@@ -155,9 +153,7 @@ func (face *Face) Codepoints(runes []rune) []int {
 func (face *Face) finish() error {
 	var err error
 	pdfwriter := face.pw
-	if l := pdfwriter.Logger; l != nil {
-		l.Info("Write font to PDF", "font", face.Filename)
-	}
+	Logger.Info("Write font to PDF", "font", face.Filename)
 	fnt := face.HarfbuzzFont.Face()
 	subset := make([]fonts.GID, len(face.usedChar))
 	i := 0

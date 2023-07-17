@@ -58,9 +58,7 @@ func (a SortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filenam
 // LoadImageFileWithBox loads an image from the disc with the given box and page
 // number.
 func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) (*Imagefile, error) {
-	if l := pw.Logger; l != nil {
-		l.Info("Load image", "filename", filename)
-	}
+	Logger.Info("Load image", "filename", filename)
 	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -339,9 +337,7 @@ func finishBitmap(imgf *Imagefile) error {
 }
 
 func (imgf *Imagefile) finish() error {
-	if l := imgf.pw.Logger; l != nil {
-		l.Info("Write image to PDF", "filename", imgf.Filename)
-	}
+	Logger.Info("Write image to PDF", "filename", imgf.Filename)
 	if imgf.Format == "pdf" {
 		return finishPDF(imgf)
 	}

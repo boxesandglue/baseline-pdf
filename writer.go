@@ -5,11 +5,21 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strings"
 
 	"golang.org/x/exp/slog"
 )
+
+var (
+	// Logger is initialized to write to io.Discard and the default log level is math.MaxInt, so it should never write anything.
+	Logger *slog.Logger
+)
+
+func init() {
+	Logger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.Level(math.MaxInt)}))
+}
 
 // Objectnumber represents a PDF object number
 type Objectnumber int
@@ -113,11 +123,6 @@ type Outline struct {
 	objectNumber Objectnumber
 }
 
-// Logger logs font loading and writing.
-type Logger interface {
-	Info(string, ...any)
-}
-
 // PDF is the central point of writing a PDF file.
 type PDF struct {
 	Catalog           Dict
@@ -130,7 +135,6 @@ type PDF struct {
 	Outlines          []*Outline
 	Major             uint // Major version. Should be 1.
 	Minor             uint // Minor version. Just for information purposes. No checks are done.
-	Logger            *slog.Logger
 	outfile           io.Writer
 	nextobject        Objectnumber
 	objectlocations   map[Objectnumber]int64
