@@ -35,16 +35,17 @@ func newInternalFontName() string {
 // Face represents a font structure with no specific size. To get the dimensions
 // of a font, you need to create a Font object with a given size.
 type Face struct {
-	FaceID       int
-	HarfbuzzFont *harfbuzz.Font
-	UnitsPerEM   int32
-	Cmap         fonts.Cmap
-	toRune       map[fonts.GID]rune
-	toGlyphIndex map[rune]fonts.GID
-	Filename     string
-	usedChar     map[int]bool
-	fontobject   *Object
-	pw           *PDF
+	FaceID         int
+	HarfbuzzFont   *harfbuzz.Font
+	UnitsPerEM     int32
+	Cmap           fonts.Cmap
+	Filename       string
+	PostscriptName string
+	toRune         map[fonts.GID]rune
+	toGlyphIndex   map[rune]fonts.GID
+	usedChar       map[int]bool
+	fontobject     *Object
+	pw             *PDF
 }
 
 // SortByFaceID is used to sort the order of the written font faces in the PDF
@@ -72,17 +73,17 @@ func (face *Face) RegisterChar(codepoint int) {
 	face.usedChar[codepoint] = true
 }
 
-func fillFaceObject(id string, hbFace harfbuzz.Face) (*Face, error) {
+func fillFaceObject(hbFace harfbuzz.Face) (*Face, error) {
 	cm, _ := hbFace.Cmap()
 	face := Face{
-		FaceID:       <-ids,
-		UnitsPerEM:   int32(hbFace.Upem()),
-		HarfbuzzFont: harfbuzz.NewFont(hbFace),
-		Filename:     id,
-		toRune:       make(map[fonts.GID]rune),
-		toGlyphIndex: make(map[rune]fonts.GID),
-		usedChar:     make(map[int]bool),
-		Cmap:         cm,
+		FaceID:         <-ids,
+		UnitsPerEM:     int32(hbFace.Upem()),
+		HarfbuzzFont:   harfbuzz.NewFont(hbFace),
+		PostscriptName: hbFace.PostscriptName(),
+		toRune:         make(map[fonts.GID]rune),
+		toGlyphIndex:   make(map[rune]fonts.GID),
+		usedChar:       make(map[int]bool),
+		Cmap:           cm,
 	}
 
 	return &face, nil
@@ -91,14 +92,21 @@ func fillFaceObject(id string, hbFace harfbuzz.Face) (*Face, error) {
 // NewFaceFromData returns a Face object which is a representation of a font file.
 // The first parameter (id) should be the file name of the font, but can be any string.
 // This is to prevent duplicate font loading.
-func NewFaceFromData(id string, data []byte) (*Face, error) {
+func NewFaceFromData(pw *PDF, data []byte, idx int) (*Face, error) {
 	r := bytes.NewReader(data)
 	fnt, err := truetype.Load(r)
 	if err != nil {
 		return nil, err
 	}
-	firstface := fnt[0]
-	return fillFaceObject(id, firstface)
+	requestedFace := fnt[idx]
+	f, err := fillFaceObject(requestedFace)
+	if err != nil {
+		return nil, err
+	}
+	f.pw = pw
+	f.fontobject = pw.NewObject()
+	return f, nil
+
 }
 
 // LoadFace loads a font from the disc. The index specifies the sub font to be
@@ -115,12 +123,13 @@ func LoadFace(pw *PDF, filename string, idx int) (*Face, error) {
 	}
 	firstface := fnt[0]
 
-	f, err := fillFaceObject(filename, firstface)
+	f, err := fillFaceObject(firstface)
 	if err != nil {
 		return nil, err
 	}
 	f.pw = pw
 	f.fontobject = pw.NewObject()
+	f.Filename = filename
 	return f, nil
 }
 
@@ -153,7 +162,7 @@ func (face *Face) Codepoints(runes []rune) []int {
 func (face *Face) finish() error {
 	var err error
 	pdfwriter := face.pw
-	Logger.Info("Write font to PDF", "font", face.Filename)
+	Logger.Info("Write font to PDF", "filename", face.Filename, "psname", face.PostscriptName)
 	fnt := face.HarfbuzzFont.Face()
 	subset := make([]fonts.GID, len(face.usedChar))
 	i := 0
@@ -221,13 +230,13 @@ func (face *Face) finish() error {
 		"Subtype":        "/CIDFontType2",
 		"Type":           "/Font",
 		"W":              fnt.WidthsPDF(),
-		"CIDToGIDMap":    "/Identity",
 	}
 
 	if isCFF {
 		cidFontType2["Subtype"] = "/CIDFontType0"
 	} else {
 		cidFontType2["Subtype"] = "/CIDFontType2"
+		cidFontType2["CIDToGIDMap"] = "/Identity"
 	}
 	cidFontType2Obj := face.pw.NewObject()
 	d := cidFontType2Obj.Dict(cidFontType2)

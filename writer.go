@@ -242,6 +242,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	if len(pw.pages.Pages) == 0 {
 		return 0, fmt.Errorf("no pages in document")
 	}
+
 	for _, page := range pw.pages.Pages {
 		obj := pw.NewObjectWithNumber(page.Dictnum)
 		fnts := Dict{}
