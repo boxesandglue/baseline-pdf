@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 )
 
@@ -280,7 +279,7 @@ func (imgf *Imagefile) parsePNG() error {
 		return err
 	}
 	defer zipReader.Close()
-	afterZipData, err := ioutil.ReadAll(zipReader)
+	afterZipData, err := io.ReadAll(zipReader)
 	if err != nil {
 		return err
 	}
