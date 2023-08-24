@@ -5,11 +5,10 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
-
-	"golang.org/x/exp/slog"
 )
 
 var (
