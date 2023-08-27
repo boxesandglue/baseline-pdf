@@ -5,7 +5,6 @@ go 1.20
 require (
 	github.com/speedata/gofpdi v1.0.18
 	github.com/speedata/textlayout v0.0.0-20230613181208-b47193566b6f
-	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
 )
 
 require (
