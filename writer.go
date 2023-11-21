@@ -2,11 +2,13 @@ package pdf
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/md5"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -382,6 +384,10 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			}
 			destnames = append(destnames, name{name: nd.Name, onum: nd.objectnumber})
 		}
+		// named destinations must be ordered alphabetically
+		slices.SortFunc(destnames, func(a, b name) int {
+			return cmp.Compare(a.name, b.name)
+		})
 
 		destNameTree = pw.NewObject()
 		var limitsAry, namesAry Array
