@@ -540,7 +540,7 @@ func (pw *PDF) Finish() error {
 		fmt.Fprintf(&str, "%d %d\n", chunk.startOnum, len(chunk.positions))
 		for i, pos := range chunk.positions {
 			if int(startOnum)+i == 0 {
-				fmt.Fprintf(&str, "%010d 65536 f \n", pos)
+				fmt.Fprintf(&str, "%010d 65535 f \n", pos)
 			} else {
 				fmt.Fprintf(&str, "%010d 00000 n \n", pos)
 			}
