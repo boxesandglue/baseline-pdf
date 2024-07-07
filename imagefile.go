@@ -16,7 +16,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/speedata/gofpdi"
+	"github.com/boxesandglue/gofpdi"
 )
 
 // Imagefile represents a physical image file. Images to be place in the PDF
