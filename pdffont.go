@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/speedata/textlayout/fonts"
-	"github.com/speedata/textlayout/fonts/truetype"
-	"github.com/speedata/textlayout/harfbuzz"
+	"github.com/boxesandglue/textlayout/fonts"
+	"github.com/boxesandglue/textlayout/fonts/truetype"
+	"github.com/boxesandglue/textlayout/harfbuzz"
 )
 
 var (

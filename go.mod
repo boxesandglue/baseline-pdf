@@ -1,10 +1,10 @@
-module github.com/speedata/baseline-pdf
+module github.com/boxesandglue/baseline-pdf
 
 go 1.20
 
 require (
-	github.com/speedata/gofpdi v1.0.18
-	github.com/speedata/textlayout v0.0.0-20230613181208-b47193566b6f
+	github.com/boxesandglue/gofpdi v1.0.18
+	github.com/boxesandglue/textlayout v0.0.0-20230613181208-b47193566b6f
 )
 
 require (
