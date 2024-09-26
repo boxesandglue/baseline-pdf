@@ -48,13 +48,13 @@ type Face struct {
 	pw             *PDF
 }
 
-// SortByFaceID is used to sort the order of the written font faces in the PDF
+// sortByFaceID is used to sort the order of the written font faces in the PDF
 // file to create reproducible builds.
-type SortByFaceID []*Face
+type sortByFaceID []*Face
 
-func (a SortByFaceID) Len() int           { return len(a) }
-func (a SortByFaceID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a SortByFaceID) Less(i, j int) bool { return a[i].FaceID < a[j].FaceID }
+func (a sortByFaceID) Len() int           { return len(a) }
+func (a sortByFaceID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a sortByFaceID) Less(i, j int) bool { return a[i].FaceID < a[j].FaceID }
 
 // RegisterChars marks the codepoints as used on the page. For font subsetting.
 func (face *Face) RegisterChars(codepoints []int) {

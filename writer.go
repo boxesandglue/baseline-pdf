@@ -38,34 +38,34 @@ func (o Objectnumber) String() string {
 // Dict is a string - string dictionary
 type Dict map[Name]any
 
-func (d Dict) String() string {
-	return HashToString(d, 0)
+// Get the PDF representation of a dictionary
+func serializeDict(d Dict) string {
+	return hashToString(d, 0)
 }
 
 // Array is a list of anything
 type Array []any
 
 func (ary Array) String() string {
-	return ArrayToString(ary)
+	return arrayToString(ary)
 }
 
 // Name represents a PDF name such as Adobe Green. The String() method prepends
 // a / (slash) to the name if not present.
 type Name string
 
-// SortByName implements the sorting sequence.
-type SortByName []Name
+// sortByName implements the sorting sequence.
+type sortByName []Name
 
-func (a SortByName) Len() int      { return len(a) }
-func (a SortByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a SortByName) Less(i, j int) bool {
+func (a sortByName) Len() int      { return len(a) }
+func (a sortByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a sortByName) Less(i, j int) bool {
 	if a[i] == "Type" {
 		return true
 	} else if a[j] == "Type" {
 		return false
 	}
 	return a[i] < a[j]
-
 }
 
 func (n Name) String() string {
@@ -109,6 +109,8 @@ type Page struct {
 	Images        []*Imagefile
 	Width         float64
 	Height        float64
+	OffsetX       float64
+	OffsetY       float64
 	Dict          Dict // Additional dictionary entries such as "/Trimbox"
 	contentStream *Object
 }
@@ -128,14 +130,16 @@ type Outline struct {
 type PDF struct {
 	Catalog           Dict
 	InfoDict          Dict
+	DefaultOffsetX    float64
+	DefaultOffsetY    float64
 	DefaultPageWidth  float64
 	DefaultPageHeight float64
 	Colorspaces       []*Separation
 	NumDestinations   map[int]*NumDest
 	NameDestinations  []*NameDest
 	Outlines          []*Outline
-	Major             uint // Major version. Should be 1.
-	Minor             uint // Minor version. Just for information purposes. No checks are done.
+	Major             uint
+	Minor             uint
 	outfile           io.Writer
 	nextobject        Objectnumber
 	objectlocations   map[Objectnumber]int64
@@ -157,12 +161,24 @@ func NewPDFWriter(file io.Writer) *PDF {
 	pw.nextobject = 1
 	pw.objectlocations[0] = 0
 	pw.pages = &Pages{}
-	pw.Printf("%%PDF-%d.%d", pw.Major, pw.Minor)
 	return &pw
+}
+
+func (pw *PDF) writePDFHead() error {
+	s := fmt.Sprintf("%%PDF-%d.%d\n%%\x80\x80\x80\x80", pw.Major, pw.Minor)
+	n, err := fmt.Fprint(pw.outfile, s)
+	pw.pos += int64(n)
+	return err
 }
 
 // Print writes the string to the PDF file
 func (pw *PDF) Print(s string) error {
+	var err error
+	if pw.pos == 0 {
+		if err = pw.writePDFHead(); err != nil {
+			return err
+		}
+	}
 	n, err := fmt.Fprint(pw.outfile, s)
 	pw.pos += int64(n)
 	return err
@@ -170,6 +186,12 @@ func (pw *PDF) Print(s string) error {
 
 // Println writes the string to the PDF file and adds a newline.
 func (pw *PDF) Println(s string) error {
+	var err error
+	if pw.pos == 0 {
+		if err = pw.writePDFHead(); err != nil {
+			return err
+		}
+	}
 	n, err := fmt.Fprintln(pw.outfile, s)
 	pw.pos += int64(n)
 	return err
@@ -177,17 +199,33 @@ func (pw *PDF) Println(s string) error {
 
 // Printf writes the formatted string to the PDF file.
 func (pw *PDF) Printf(format string, a ...any) error {
+	var err error
+	if pw.pos == 0 {
+		if err = pw.writePDFHead(); err != nil {
+			return err
+		}
+	}
 	n, err := fmt.Fprintf(pw.outfile, format, a...)
 	pw.pos += int64(n)
 	return err
 }
 
-// AddPage adds a page to the PDF file. The content stream must be complete.
-func (pw *PDF) AddPage(content *Object, dictnum Objectnumber) *Page {
-	pg := &Page{}
+// AddPage adds a page to the PDF file. The content stream must a stream object
+// (i.e. an object with data). Pass 0 for the page object number if you don't
+// pre-allocate an object number for the page.
+func (pw *PDF) AddPage(content *Object, page Objectnumber) *Page {
+	pg := &Page{
+		Width:   pw.DefaultPageWidth,
+		Height:  pw.DefaultPageHeight,
+		OffsetX: pw.DefaultOffsetX,
+		OffsetY: pw.DefaultOffsetY,
+	}
+	if page == 0 {
+		page = pw.NextObject()
+	}
 	pg.contentStream = content
 	content.ForceStream = true
-	pg.Dictnum = dictnum
+	pg.Dictnum = page
 	pw.pages.Pages = append(pw.pages.Pages, pg)
 	return pg
 }
@@ -285,7 +323,9 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			"Type":     "/Page",
 			"Contents": page.contentStream.ObjectNumber.Ref(),
 			"Parent":   pagesObj.ObjectNumber.Ref(),
-			"MediaBox": fmt.Sprintf("[0 0 %s %s]", FloatToPoint(page.Width), FloatToPoint(page.Height)),
+		}
+		if page.OffsetX != pw.DefaultOffsetX && page.OffsetY != pw.DefaultOffsetY && page.Width != pw.DefaultPageWidth && page.Height != pw.DefaultPageHeight {
+			pageHash["MediaBox"] = fmt.Sprintf("[%s %s %s %s]", FloatToPoint(page.OffsetX), FloatToPoint(page.OffsetY), FloatToPoint(page.Width), FloatToPoint(page.Height))
 		}
 
 		if len(resHash) > 0 {
@@ -333,7 +373,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		"Type":     "/Pages",
 		"Kids":     "[ " + strings.Join(kids, " ") + " ]",
 		"Count":    fmt.Sprint(len(pw.pages.Pages)),
-		"MediaBox": fmt.Sprintf("[0 0 %s %s]", FloatToPoint(pw.DefaultPageWidth), FloatToPoint(pw.DefaultPageHeight)),
+		"MediaBox": fmt.Sprintf("[%s %s %s %s]", FloatToPoint(pw.DefaultOffsetX), FloatToPoint(pw.DefaultOffsetY), FloatToPoint(pw.DefaultPageWidth), FloatToPoint(pw.DefaultPageHeight)),
 	})
 	pagesObj.Save()
 
@@ -428,7 +468,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	for k := range usedFaces {
 		sortedFaces = append(sortedFaces, k)
 	}
-	sort.Sort(SortByFaceID(sortedFaces))
+	sort.Sort(sortByFaceID(sortedFaces))
 	for _, f := range sortedFaces {
 		f.finish()
 	}
@@ -461,7 +501,7 @@ func (pw *PDF) writeOutline(parentObj *Object, outlines []*Outline) (first Objec
 		outlineObj := pw.NewObjectWithNumber(outline.objectNumber)
 		outlineDict := Dict{}
 		outlineDict["Parent"] = parentObj.ObjectNumber.Ref()
-		outlineDict["Title"] = StringToPDF(outline.Title)
+		outlineDict["Title"] = stringToPDF(outline.Title)
 		outlineDict["Dest"] = outline.Dest
 
 		if i < len(outlines)-1 {
@@ -579,9 +619,9 @@ func (pw *PDF) Size() int64 {
 	return pw.pos
 }
 
-// HashToString converts a PDF dictionary to a string including the paired angle
+// hashToString converts a PDF dictionary to a string including the paired angle
 // brackets (<< ... >>).
-func HashToString(h Dict, level int) string {
+func hashToString(h Dict, level int) string {
 	var b bytes.Buffer
 	b.WriteString(strings.Repeat("  ", level))
 	b.WriteString("<<\n")
@@ -589,9 +629,9 @@ func HashToString(h Dict, level int) string {
 	for v := range h {
 		keys = append(keys, v)
 	}
-	sort.Sort(SortByName(keys))
+	sort.Sort(sortByName(keys))
 	for _, key := range keys {
-		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat("  ", level+1), key, h[key]))
+		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat("  ", level+1), key, Serialize(h[key])))
 	}
 	b.WriteString(strings.Repeat("  ", level))
 	b.WriteString(">>")
@@ -599,11 +639,14 @@ func HashToString(h Dict, level int) string {
 }
 
 func (pw *PDF) outHash(h Dict) {
-	pw.Printf(HashToString(h, 0))
+	pw.Printf(hashToString(h, 0))
 }
 
 // Write an end of line (EOL) marker to the file if it is not on a EOL already.
 func (pw *PDF) eol() {
+	if pw.pos == 0 {
+		pw.writePDFHead()
+	}
 	if pw.pos != pw.lastEOL {
 		pw.Println("")
 		pw.lastEOL = pw.pos
@@ -613,6 +656,12 @@ func (pw *PDF) eol() {
 // Write a start object marker with the next free object.
 func (pw *PDF) startObject(onum Objectnumber) error {
 	var position int64
+	if pw.pos == 0 {
+		var err error
+		if err = pw.writePDFHead(); err != nil {
+			return err
+		}
+	}
 	position = pw.pos + 1
 	pw.objectlocations[onum] = position
 	pw.Printf("\n%d 0 obj\n", onum)

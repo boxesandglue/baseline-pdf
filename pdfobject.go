@@ -36,8 +36,8 @@ type NameDest struct {
 // hexadecimal form when placed in the PDF.
 type String string
 
-// StringToPDF returns an escaped string suitable to be used as a PDF object.
-func StringToPDF(str string) string {
+// stringToPDF returns an escaped string suitable to be used as a PDF object.
+func stringToPDF(str string) string {
 	isASCII := true
 	for _, g := range str {
 		if g > 127 {
@@ -61,29 +61,38 @@ func StringToPDF(str string) string {
 }
 
 func (s String) String() string {
-	return StringToPDF(string(s))
+	return stringToPDF(string(s))
 }
 
-// ArrayToString converts the objects in ary to a string including the opening and closing bracket
-func ArrayToString(ary []any) string {
+// Serialize writes the item to the PDF. Arrays are written with square
+// brackets, Dicts with double angle brackets, Strings (PDF strings) with
+// parenthesis or single angle brackets, depending on the contents and all other
+// objects with their respective String() method.
+func Serialize(item any) string {
+	switch t := item.(type) {
+	case string:
+		return t
+	case Array:
+		return arrayToString(t)
+	case int:
+		return fmt.Sprintf("%d", t)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case Dict:
+		return serializeDict(t)
+	case String:
+		return fmt.Sprintf("%s", t)
+	default:
+		return fmt.Sprintf("%s", t)
+	}
+}
+
+// arrayToString converts the objects in ary to a string including the opening
+// and closing bracket.
+func arrayToString(ary []any) string {
 	ret := []string{"["}
 	for _, elt := range ary {
-		switch t := elt.(type) {
-		case string:
-			ret = append(ret, t)
-		case Array:
-			ret = append(ret, ArrayToString(t))
-		case int:
-			ret = append(ret, fmt.Sprintf("%d", t))
-		case float64:
-			ret = append(ret, strconv.FormatFloat(t, 'f', -1, 64))
-		case Dict:
-			ret = append(ret, fmt.Sprintf("%s", t))
-		case String:
-			ret = append(ret, fmt.Sprintf("%s", t))
-		default:
-			ret = append(ret, fmt.Sprintf("%s", t))
-		}
+		ret = append(ret, Serialize(elt))
 	}
 	ret = append(ret, "]")
 	return strings.Join(ret, " ")
@@ -107,6 +116,7 @@ type Object struct {
 	pdfwriter    *PDF
 	compress     bool // for streams
 	comment      string
+	saved        bool // set to true when object is written to the PDF file
 }
 
 // NewObjectWithNumber create a new PDF object and reserves an object
@@ -140,6 +150,11 @@ func (obj *Object) SetCompression(compresslevel uint) {
 
 // Save adds the PDF object to the main PDF file.
 func (obj *Object) Save() error {
+	// guard against multiple Save()
+	if obj.saved {
+		return nil
+	}
+	obj.saved = true
 	if obj.comment != "" {
 		if err := obj.pdfwriter.Print("\n% " + obj.comment); err != nil {
 			return err
@@ -185,13 +200,13 @@ func (obj *Object) Save() error {
 
 	obj.pdfwriter.startObject(obj.ObjectNumber)
 	if len(obj.Dictionary) > 0 {
-		n, err := fmt.Fprint(obj.pdfwriter.outfile, HashToString(obj.Dictionary, 0))
+		n, err := fmt.Fprint(obj.pdfwriter.outfile, hashToString(obj.Dictionary, 0))
 		if err != nil {
 			return err
 		}
 		obj.pdfwriter.pos += int64(n)
 	} else if len(obj.Array) > 0 {
-		n, err := fmt.Fprint(obj.pdfwriter.outfile, ArrayToString(obj.Array))
+		n, err := fmt.Fprint(obj.pdfwriter.outfile, arrayToString(obj.Array))
 		if err != nil {
 			return err
 		}
