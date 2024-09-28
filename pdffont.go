@@ -41,8 +41,6 @@ type Face struct {
 	Cmap           fonts.Cmap
 	Filename       string
 	PostscriptName string
-	toRune         map[fonts.GID]rune
-	toGlyphIndex   map[rune]fonts.GID
 	usedChar       map[int]bool
 	fontobject     *Object
 	pw             *PDF
@@ -80,8 +78,6 @@ func fillFaceObject(hbFace harfbuzz.Face) (*Face, error) {
 		UnitsPerEM:     int32(hbFace.Upem()),
 		HarfbuzzFont:   harfbuzz.NewFont(hbFace),
 		PostscriptName: hbFace.PostscriptName(),
-		toRune:         make(map[fonts.GID]rune),
-		toGlyphIndex:   make(map[rune]fonts.GID),
 		usedChar:       make(map[int]bool),
 		Cmap:           cm,
 	}
@@ -92,7 +88,7 @@ func fillFaceObject(hbFace harfbuzz.Face) (*Face, error) {
 // NewFaceFromData returns a Face object which is a representation of a font file.
 // The first parameter (id) should be the file name of the font, but can be any string.
 // This is to prevent duplicate font loading.
-func NewFaceFromData(pw *PDF, data []byte, idx int) (*Face, error) {
+func (pw *PDF) NewFaceFromData(data []byte, idx int) (*Face, error) {
 	r := bytes.NewReader(data)
 	fnt, err := truetype.Load(r)
 	if err != nil {
@@ -111,7 +107,7 @@ func NewFaceFromData(pw *PDF, data []byte, idx int) (*Face, error) {
 
 // LoadFace loads a font from the disc. The index specifies the sub font to be
 // loaded.
-func LoadFace(pw *PDF, filename string, idx int) (*Face, error) {
+func (pw *PDF) LoadFace(filename string, idx int) (*Face, error) {
 	r, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -139,9 +135,9 @@ func (face *Face) InternalName() string {
 }
 
 // Codepoint tries to find the code point for r. If none found, 0 is returned.
-func (face *Face) Codepoint(r rune) fonts.GID {
+func (face *Face) Codepoint(r rune) int {
 	if gid, ok := face.Cmap.Lookup(r); ok {
-		return gid
+		return int(gid)
 	}
 	return 0
 }
@@ -170,9 +166,10 @@ func (face *Face) finish() error {
 		subset[i] = fonts.GID(g)
 		i++
 	}
-
-	if err = fnt.Subset(subset); err != nil {
-		return err
+	if len(subset) > 0 {
+		if err = fnt.Subset(subset); err != nil {
+			return err
+		}
 	}
 
 	fontstream := pdfwriter.NewObject()

@@ -273,7 +273,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	for k := range usedImages {
 		sortedImages = append(sortedImages, k)
 	}
-	sort.Sort(SortImagefile(sortedImages))
+	sort.Sort(sortImagefile(sortedImages))
 	for _, img := range sortedImages {
 		img.finish()
 	}
@@ -324,7 +324,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			"Contents": page.contentStream.ObjectNumber.Ref(),
 			"Parent":   pagesObj.ObjectNumber.Ref(),
 		}
-		if page.OffsetX != pw.DefaultOffsetX && page.OffsetY != pw.DefaultOffsetY && page.Width != pw.DefaultPageWidth && page.Height != pw.DefaultPageHeight {
+		if page.OffsetX != pw.DefaultOffsetX || page.OffsetY != pw.DefaultOffsetY || page.Width != pw.DefaultPageWidth || page.Height != pw.DefaultPageHeight {
 			pageHash["MediaBox"] = fmt.Sprintf("[%s %s %s %s]", FloatToPoint(page.OffsetX), FloatToPoint(page.OffsetY), FloatToPoint(page.Width), FloatToPoint(page.Height))
 		}
 

@@ -47,17 +47,17 @@ type Imagefile struct {
 	data             []byte
 }
 
-// SortImagefile is used to sort the order of the written images in the PDF
+// sortImagefile is used to sort the order of the written images in the PDF
 // file to create reproducible builds.
-type SortImagefile []*Imagefile
+type sortImagefile []*Imagefile
 
-func (a SortImagefile) Len() int           { return len(a) }
-func (a SortImagefile) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a SortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filename }
+func (a sortImagefile) Len() int           { return len(a) }
+func (a sortImagefile) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a sortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filename }
 
 // LoadImageFileWithBox loads an image from the disc with the given box and page
 // number.
-func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) (*Imagefile, error) {
+func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int) (*Imagefile, error) {
 	Logger.Info("Load image", "filename", filename)
 	r, err := os.Open(filename)
 	if err != nil {
@@ -95,8 +95,8 @@ func LoadImageFileWithBox(pw *PDF, filename string, box string, pagenumber int) 
 
 // LoadImageFile loads an image from the disc. For PDF files it defaults to page
 // 1 and the /MediaBox.
-func LoadImageFile(pw *PDF, filename string) (*Imagefile, error) {
-	return LoadImageFileWithBox(pw, filename, "/MediaBox", 1)
+func (pw *PDF) LoadImageFile(filename string) (*Imagefile, error) {
+	return pw.LoadImageFileWithBox(filename, "/MediaBox", 1)
 }
 
 func (imgf *Imagefile) parseJPG(imgCfg image.Config) error {
