@@ -12,16 +12,6 @@ import (
 
 var pdfStringReplacer = strings.NewReplacer(`(`, `\(`, `)`, `\)`, `\`, `\\`, "\n", `\n`, "\r", `\r`, "\t", `\t`, "\b", `\b`, "\t", `\t`)
 
-// NumDest represents a simple PDF destination. The origin of X and Y are in the
-// top left corner and expressed in DTP points.
-type NumDest struct {
-	PageObjectnumber Objectnumber
-	Num              int
-	X                float64
-	Y                float64
-	objectnumber     Objectnumber
-}
-
 // NameDest represents a named PDF destination. The origin of X and Y are in the
 // top left corner and expressed in DTP points.
 type NameDest struct {
@@ -60,15 +50,16 @@ func stringToPDF(str string) string {
 	return out.String()
 }
 
-func (s String) String() string {
-	return stringToPDF(string(s))
+// Serialize returns a string representation of the item as it may appear in the
+// PDF file. Arrays are written with square brackets, Dicts with double angle
+// brackets, Strings (PDF strings) with parentheses or single angle brackets,
+// depending on the contents and all other objects with their respective
+// String() method.
+func Serialize(item any) string {
+	return serializeLevel(item, 0)
 }
 
-// Serialize writes the item to the PDF. Arrays are written with square
-// brackets, Dicts with double angle brackets, Strings (PDF strings) with
-// parenthesis or single angle brackets, depending on the contents and all other
-// objects with their respective String() method.
-func Serialize(item any) string {
+func serializeLevel(item any, level int) string {
 	switch t := item.(type) {
 	case string:
 		return t
@@ -79,9 +70,9 @@ func Serialize(item any) string {
 	case float64:
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	case Dict:
-		return serializeDict(t)
+		return hashToString(t, level+1)
 	case String:
-		return fmt.Sprintf("%s", t)
+		return fmt.Sprintf("%s", stringToPDF(string(t)))
 	default:
 		return fmt.Sprintf("%s", t)
 	}
@@ -223,7 +214,7 @@ func (obj *Object) Save() error {
 			return err
 		}
 		obj.pdfwriter.pos += m
-		n, err = fmt.Fprintln(obj.pdfwriter.outfile, "\nendstream")
+		n, err = fmt.Fprint(obj.pdfwriter.outfile, "\nendstream")
 		if err != nil {
 			return err
 		}

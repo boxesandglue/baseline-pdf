@@ -2,7 +2,6 @@ package pdf
 
 import (
 	"bytes"
-	"cmp"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -35,7 +34,8 @@ func (o Objectnumber) String() string {
 	return fmt.Sprintf("%d 0 R", o)
 }
 
-// Dict is a string - string dictionary
+// Dict is a dictionary where each key begins with a slash (/). Each value can
+// be a string, an array or another dictionary.
 type Dict map[Name]any
 
 // Get the PDF representation of a dictionary
@@ -45,10 +45,6 @@ func serializeDict(d Dict) string {
 
 // Array is a list of anything
 type Array []any
-
-func (ary Array) String() string {
-	return arrayToString(ary)
-}
 
 // Name represents a PDF name such as Adobe Green. The String() method prepends
 // a / (slash) to the name if not present.
@@ -76,8 +72,8 @@ func (n Name) String() string {
 
 // Pages is the parent page structure
 type Pages struct {
-	Pages   []*Page
-	dictnum Objectnumber
+	Pages  []*Page
+	objnum Objectnumber
 }
 
 // An Annotation is a PDF element that is additional to the text, such as a
@@ -103,7 +99,7 @@ type Separation struct {
 
 // Page contains information about a single page.
 type Page struct {
-	Dictnum       Objectnumber // The "/Page" object
+	Objnum        Objectnumber // The "/Page" object
 	Annotations   []Annotation
 	Faces         []*Face
 	Images        []*Imagefile
@@ -135,8 +131,7 @@ type PDF struct {
 	DefaultPageWidth  float64
 	DefaultPageHeight float64
 	Colorspaces       []*Separation
-	NumDestinations   map[int]*NumDest
-	NameDestinations  []*NameDest
+	NameDestinations  map[String]*NameDest
 	Outlines          []*Outline
 	Major             uint
 	Minor             uint
@@ -153,8 +148,7 @@ func NewPDFWriter(file io.Writer) *PDF {
 	pw := PDF{
 		Major:            1,
 		Minor:            7,
-		NumDestinations:  make(map[int]*NumDest),
-		NameDestinations: make([]*NameDest, 0),
+		NameDestinations: make(map[String]*NameDest),
 		objectlocations:  make(map[Objectnumber]int64),
 	}
 	pw.outfile = file
@@ -225,7 +219,7 @@ func (pw *PDF) AddPage(content *Object, page Objectnumber) *Page {
 	}
 	pg.contentStream = content
 	content.ForceStream = true
-	pg.Dictnum = page
+	pg.Objnum = page
 	pw.pages.Pages = append(pw.pages.Pages, pg)
 	return pg
 }
@@ -283,7 +277,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	}
 
 	for _, page := range pw.pages.Pages {
-		obj := pw.NewObjectWithNumber(page.Dictnum)
+		obj := pw.NewObjectWithNumber(page.Objnum)
 		fnts := Dict{}
 		if len(page.Faces) > 0 {
 			for _, face := range page.Faces {
@@ -364,11 +358,10 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	// The pages object
 	kids := make([]string, len(pw.pages.Pages))
 	for i, v := range pw.pages.Pages {
-		kids[i] = v.Dictnum.Ref()
+		kids[i] = v.Objnum.Ref()
 	}
 
-	pagesObj.comment = "The pages object"
-	pw.pages.dictnum = pagesObj.ObjectNumber
+	pw.pages.objnum = pagesObj.ObjectNumber
 	pagesObj.Dict(Dict{
 		"Type":     "/Pages",
 		"Kids":     "[ " + strings.Join(kids, " ") + " ]",
@@ -401,10 +394,9 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	}
 
 	catalog := pw.NewObject()
-	catalog.comment = "Catalog"
 	dictCatalog := Dict{
 		"Type":  "/Catalog",
-		"Pages": pw.pages.dictnum.Ref(),
+		"Pages": pw.pages.objnum.Ref(),
 	}
 	if pw.Outlines != nil {
 		dictCatalog["/Outlines"] = outlinesOjbNum.Ref()
@@ -416,18 +408,21 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			onum Objectnumber
 			name String
 		}
-		destnames := []name{}
-		for _, nd := range pw.NameDestinations {
+		destnames := make([]name, 0, len(pw.NameDestinations))
+
+		sortedNames := make([]String, 0, len(pw.NameDestinations))
+		for destname := range pw.NameDestinations {
+			sortedNames = append(sortedNames, destname)
+		}
+		slices.Sort(sortedNames)
+		for _, n := range sortedNames {
+			nd := pw.NameDestinations[n]
 			nd.objectnumber, err = pw.writeDestObj(nd.PageObjectnumber, nd.X, nd.Y)
 			if err != nil {
 				return 0, err
 			}
 			destnames = append(destnames, name{name: nd.Name, onum: nd.objectnumber})
 		}
-		// named destinations must be ordered alphabetically
-		slices.SortFunc(destnames, func(a, b name) int {
-			return cmp.Compare(a.name, b.name)
-		})
 
 		destNameTree = pw.NewObject()
 		var limitsAry, namesAry Array
@@ -439,8 +434,8 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		}
 
 		destNameTree.Dict(Dict{
-			"Limits": limitsAry.String(),
-			"Names":  namesAry.String(),
+			"Limits": Serialize(limitsAry),
+			"Names":  Serialize(namesAry),
 		})
 		destNameTree.Save()
 	}
@@ -502,7 +497,7 @@ func (pw *PDF) writeOutline(parentObj *Object, outlines []*Outline) (first Objec
 		outlineDict := Dict{}
 		outlineDict["Parent"] = parentObj.ObjectNumber.Ref()
 		outlineDict["Title"] = stringToPDF(outline.Title)
-		outlineDict["Dest"] = outline.Dest
+		outlineDict["Dest"] = Serialize(outline.Dest)
 
 		if i < len(outlines)-1 {
 			outlineDict["Next"] = outlines[i+1].objectNumber.Ref()
@@ -623,7 +618,6 @@ func (pw *PDF) Size() int64 {
 // brackets (<< ... >>).
 func hashToString(h Dict, level int) string {
 	var b bytes.Buffer
-	b.WriteString(strings.Repeat("  ", level))
 	b.WriteString("<<\n")
 	keys := make([]Name, 0, len(h))
 	for v := range h {
@@ -631,9 +625,9 @@ func hashToString(h Dict, level int) string {
 	}
 	sort.Sort(sortByName(keys))
 	for _, key := range keys {
-		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat("  ", level+1), key, Serialize(h[key])))
+		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat(" ", level+1), key, serializeLevel(h[key], level+1)))
 	}
-	b.WriteString(strings.Repeat("  ", level))
+	b.WriteString(strings.Repeat(" ", level))
 	b.WriteString(">>")
 	return b.String()
 }
