@@ -135,6 +135,7 @@ type PDF struct {
 	Outlines          []*Outline
 	Major             uint
 	Minor             uint
+	NoPages           int // set when PDF is finished
 	outfile           io.Writer
 	nextobject        Objectnumber
 	objectlocations   map[Objectnumber]int64
@@ -605,7 +606,7 @@ func (pw *PDF) Finish() error {
 	if err = pw.Printf("\nstartxref\n%d\n%%%%EOF\n", xrefpos); err != nil {
 		return err
 	}
-
+	pw.NoPages = len(pw.pages.Pages)
 	return nil
 }
 
