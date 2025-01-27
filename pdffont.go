@@ -44,6 +44,7 @@ type Face struct {
 	usedChar       map[int]bool
 	fontobject     *Object
 	pw             *PDF
+	Scale          float64
 }
 
 // sortByFaceID is used to sort the order of the written font faces in the PDF
@@ -80,6 +81,12 @@ func fillFaceObject(hbFace harfbuzz.Face) (*Face, error) {
 		PostscriptName: hbFace.PostscriptName(),
 		usedChar:       make(map[int]bool),
 		Cmap:           cm,
+		Scale:          1.0,
+	}
+	if ttf, ok := hbFace.(*truetype.Font); ok {
+		if ttf.Type == truetype.TypeOpenType {
+			face.Scale = 1000 / float64(hbFace.Upem())
+		}
 	}
 
 	return &face, nil
