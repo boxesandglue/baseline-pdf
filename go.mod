@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/boxesandglue/gofpdi v1.0.19
-	github.com/boxesandglue/textlayout v1.0.2
+	github.com/boxesandglue/textlayout v1.0.3
 
 )
 
