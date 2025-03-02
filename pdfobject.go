@@ -2,7 +2,6 @@ package pdf
 
 import (
 	"bytes"
-	"compress/zlib"
 	"fmt"
 	"math"
 	"strconv"
@@ -175,12 +174,11 @@ func (obj *Object) Save() error {
 		if obj.compress {
 			obj.Dictionary["Filter"] = "/FlateDecode"
 			var b bytes.Buffer
-			zw, err := zlib.NewWriterLevel(&b, zlib.BestSpeed)
-			if err != nil {
+			obj.pdfwriter.zlibWriter.Reset(&b)
+			if _, err := obj.pdfwriter.zlibWriter.Write(obj.Data.Bytes()); err != nil {
 				return err
 			}
-			zw.Write(obj.Data.Bytes())
-			zw.Close()
+			obj.pdfwriter.zlibWriter.Close()
 			obj.Dictionary["Length"] = fmt.Sprintf("%d", b.Len())
 			obj.Dictionary["Length1"] = fmt.Sprintf("%d", obj.Data.Len())
 			obj.Data = &b

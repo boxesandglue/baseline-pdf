@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"bytes"
+	"compress/zlib"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -14,7 +15,8 @@ import (
 
 var (
 	// Logger is initialized to write to io.Discard and the default log level is math.MaxInt, so it should never write anything.
-	Logger *slog.Logger
+	Logger          *slog.Logger
+	PDFNameReplacer = strings.NewReplacer("#20", " ")
 )
 
 func init() {
@@ -65,9 +67,8 @@ func (a sortByName) Less(i, j int) bool {
 }
 
 func (n Name) String() string {
-	a := strings.NewReplacer(" ", "#20")
 	r, _ := strings.CutPrefix(string(n), "/")
-	return "/" + a.Replace(string(r))
+	return "/" + PDFNameReplacer.Replace(string(r))
 }
 
 // Pages is the parent page structure
@@ -142,6 +143,10 @@ type PDF struct {
 	pages             *Pages
 	lastEOL           int64
 	pos               int64
+	// having a zlib writer here and using reset removes lots
+	// of allocations that would happen with
+	// a new zlib writer for each stream
+	zlibWriter *zlib.Writer
 }
 
 // NewPDFWriter creates a PDF file for writing to file
@@ -151,6 +156,7 @@ func NewPDFWriter(file io.Writer) *PDF {
 		Minor:            7,
 		NameDestinations: make(map[String]*NameDest),
 		objectlocations:  make(map[Objectnumber]int64),
+		zlibWriter:       zlib.NewWriter(io.Discard),
 	}
 	pw.outfile = file
 	pw.nextobject = 1
