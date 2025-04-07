@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -20,6 +21,11 @@ type NameDest struct {
 	Y                float64
 	objectnumber     Objectnumber
 }
+
+// NameTreeData is a map of strings to object numbers which is sorted by key and
+// converted to an array when written to the PDF. It is suitable for use in a
+// name tree object.
+type NameTreeData map[String]Objectnumber
 
 // String is a string that gets automatically converted to (...) or
 // hexadecimal form when placed in the PDF.
@@ -71,7 +77,21 @@ func serializeLevel(item any, level int) string {
 	case Dict:
 		return hashToString(t, level+1)
 	case String:
-		return fmt.Sprintf("%s", stringToPDF(string(t)))
+		return stringToPDF(string(t))
+	case NameTreeData:
+		// sort by key
+		var keys []string
+		for k := range t {
+			keys = append(keys, string(k))
+		}
+		sort.Strings(keys)
+		var out strings.Builder
+		out.WriteString("[ ")
+		for _, k := range keys {
+			out.WriteString(fmt.Sprintf("%s %s ", stringToPDF(k), t[String(k)]))
+		}
+		out.WriteString("]")
+		return out.String()
 	default:
 		return fmt.Sprintf("%s", t)
 	}

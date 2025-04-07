@@ -16,7 +16,7 @@ import (
 var (
 	// Logger is initialized to write to io.Discard and the default log level is math.MaxInt, so it should never write anything.
 	Logger          *slog.Logger
-	PDFNameReplacer = strings.NewReplacer("#20", " ")
+	PDFNameReplacer = strings.NewReplacer("#20", " ", "/", "#2f", "#", "#23", "(", "#28", ")", "#29")
 )
 
 func init() {
@@ -68,7 +68,7 @@ func (a sortByName) Less(i, j int) bool {
 
 func (n Name) String() string {
 	r, _ := strings.CutPrefix(string(n), "/")
-	return "/" + PDFNameReplacer.Replace(string(r))
+	return "/" + PDFNameReplacer.Replace(r)
 }
 
 // Pages is the parent page structure
@@ -137,12 +137,14 @@ type PDF struct {
 	Major             uint
 	Minor             uint
 	NoPages           int // set when PDF is finished
-	outfile           io.Writer
+	lastEOL           int64
+	names             Dict
 	nextobject        Objectnumber
 	objectlocations   map[Objectnumber]int64
+	outfile           io.Writer
 	pages             *Pages
-	lastEOL           int64
 	pos               int64
+
 	// having a zlib writer here and using reset removes lots
 	// of allocations that would happen with
 	// a new zlib writer for each stream
@@ -157,12 +159,21 @@ func NewPDFWriter(file io.Writer) *PDF {
 		NameDestinations: make(map[String]*NameDest),
 		objectlocations:  make(map[Objectnumber]int64),
 		zlibWriter:       zlib.NewWriter(io.Discard),
+		names:            make(Dict),
 	}
 	pw.outfile = file
 	pw.nextobject = 1
 	pw.objectlocations[0] = 0
 	pw.pages = &Pages{}
 	return &pw
+}
+
+// Return the Dict for the specified name. If it does not exist, it is created.
+func (pd *PDF) GetCatalogNameTreeDict(dict Name) Dict {
+	if pd.names[dict] == nil {
+		pd.names[dict] = make(Dict)
+	}
+	return pd.names[dict].(Dict)
 }
 
 func (pw *PDF) writePDFHead() error {
@@ -375,7 +386,9 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		"Count":    fmt.Sprint(len(pw.pages.Pages)),
 		"MediaBox": fmt.Sprintf("[%s %s %s %s]", FloatToPoint(pw.DefaultOffsetX), FloatToPoint(pw.DefaultOffsetY), FloatToPoint(pw.DefaultPageWidth), FloatToPoint(pw.DefaultPageHeight)),
 	})
-	pagesObj.Save()
+	if err = pagesObj.Save(); err != nil {
+		return 0, err
+	}
 
 	// outlines
 	var outlinesOjbNum Objectnumber
@@ -409,7 +422,6 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		dictCatalog["/Outlines"] = outlinesOjbNum.Ref()
 	}
 
-	var destNameTree *Object
 	if len(pw.NameDestinations) != 0 {
 		type name struct {
 			onum Objectnumber
@@ -431,7 +443,6 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			destnames = append(destnames, name{name: nd.Name, onum: nd.objectnumber})
 		}
 
-		destNameTree = pw.NewObject()
 		var limitsAry, namesAry Array
 		limitsAry = append(limitsAry, destnames[0].name)
 		limitsAry = append(limitsAry, destnames[len(destnames)-1].name)
@@ -440,30 +451,24 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			namesAry = append(namesAry, n.onum.Ref())
 		}
 
-		destNameTree.Dict(Dict{
+		destNameTree := Dict{
 			"Limits": Serialize(limitsAry),
 			"Names":  Serialize(namesAry),
-		})
-		destNameTree.Save()
+		}
+
+		pw.names["Dests"] = destNameTree
 	}
 
-	if destNameTree != nil {
-		d := Dict{
-			"Dests": destNameTree.ObjectNumber.Ref(),
-		}
-		nameDict := pw.NewObject()
-		nameDict.Dict(d)
-		if err = nameDict.Save(); err != nil {
-			return 0, err
-		}
-		dictCatalog["Names"] = nameDict.ObjectNumber.Ref()
+	if len(pw.names) > 0 {
+		dictCatalog["Names"] = pw.names
 	}
-
 	for k, v := range pw.Catalog {
 		dictCatalog[k] = v
 	}
 	catalog.Dict(dictCatalog)
-	catalog.Save()
+	if err = catalog.Save(); err != nil {
+		return 0, err
+	}
 
 	// write out all font descriptors and files into the PDF
 	sortedFaces := make([]*Face, 0, len(usedFaces))
@@ -472,7 +477,9 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	}
 	sort.Sort(sortByFaceID(sortedFaces))
 	for _, f := range sortedFaces {
-		f.finish()
+		if err = f.finish(); err != nil {
+			return 0, err
+		}
 	}
 
 	return catalog.ObjectNumber, nil
