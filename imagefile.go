@@ -169,7 +169,9 @@ func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, p
 		return int(pw.NewObject().ObjectNumber)
 	}
 	imgf.pdfimporter.SetObjIDGetter(f)
-	imgf.pdfimporter.SetSourceStream(r)
+	if err = imgf.pdfimporter.SetSourceStream(r); err != nil {
+		return nil, fmt.Errorf("could not set source stream for PDF importer: %w", err)
+	}
 	if imgf.NumberOfPages, err = imgf.pdfimporter.GetNumPages(); err != nil {
 		return nil, err
 	}
@@ -179,7 +181,6 @@ func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, p
 		return nil, err
 	}
 	imgf.PageSizes = ps
-	// pbox := ps[pagenumber][box]
 	pbox, err := imgf.GetPDFBoxDimensions(pagenumber, box)
 	if err != nil {
 		return nil, err
