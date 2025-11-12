@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	// Logger is initialized to write to io.Discard and the default log level is math.MaxInt, so it should never write anything.
+	// Logger is initialized to write to io.Discard and the default log level is
+	// math.MaxInt, so it should never write anything.
 	Logger          *slog.Logger
-	PDFNameReplacer = strings.NewReplacer("#20", " ", "/", "#2f", "#", "#23", "(", "#28", ")", "#29")
+	pdfNameReplacer = strings.NewReplacer("#20", " ", "/", "#2f", "#", "#23", "(", "#28", ")", "#29")
 )
 
 func init() {
@@ -33,7 +34,7 @@ func (o Objectnumber) Ref() string {
 
 // String returns a reference to the object number
 func (o Objectnumber) String() string {
-	return fmt.Sprintf("%d 0 R", o)
+	return fmt.Sprintf("%d", o)
 }
 
 // Dict is a dictionary where each key begins with a slash (/). Each value can
@@ -68,7 +69,7 @@ func (a sortByName) Less(i, j int) bool {
 
 func (n Name) String() string {
 	r, _ := strings.CutPrefix(string(n), "/")
-	return "/" + PDFNameReplacer.Replace(r)
+	return "/" + pdfNameReplacer.Replace(r)
 }
 
 // Pages is the parent page structure
@@ -168,12 +169,13 @@ func NewPDFWriter(file io.Writer) *PDF {
 	return &pw
 }
 
-// Return the Dict for the specified name. If it does not exist, it is created.
-func (pd *PDF) GetCatalogNameTreeDict(dict Name) Dict {
-	if pd.names[dict] == nil {
-		pd.names[dict] = make(Dict)
+// GetCatalogNameTreeDict returns the Dict for the specified name. If it does
+// not exist, it is created.
+func (pw *PDF) GetCatalogNameTreeDict(dict Name) Dict {
+	if pw.names[dict] == nil {
+		pw.names[dict] = make(Dict)
 	}
-	return pd.names[dict].(Dict)
+	return pw.names[dict].(Dict)
 }
 
 func (pw *PDF) writePDFHead() error {
@@ -183,13 +185,17 @@ func (pw *PDF) writePDFHead() error {
 	return err
 }
 
+func (pw *PDF) ensureHeader() error {
+	if pw.pos == 0 {
+		return pw.writePDFHead()
+	}
+	return nil
+}
+
 // Print writes the string to the PDF file
 func (pw *PDF) Print(s string) error {
-	var err error
-	if pw.pos == 0 {
-		if err = pw.writePDFHead(); err != nil {
-			return err
-		}
+	if err := pw.ensureHeader(); err != nil {
+		return err
 	}
 	n, err := fmt.Fprint(pw.outfile, s)
 	pw.pos += int64(n)
@@ -198,11 +204,8 @@ func (pw *PDF) Print(s string) error {
 
 // Println writes the string to the PDF file and adds a newline.
 func (pw *PDF) Println(s string) error {
-	var err error
-	if pw.pos == 0 {
-		if err = pw.writePDFHead(); err != nil {
-			return err
-		}
+	if err := pw.ensureHeader(); err != nil {
+		return err
 	}
 	n, err := fmt.Fprintln(pw.outfile, s)
 	pw.pos += int64(n)
@@ -211,11 +214,9 @@ func (pw *PDF) Println(s string) error {
 
 // Printf writes the formatted string to the PDF file.
 func (pw *PDF) Printf(format string, a ...any) error {
-	var err error
-	if pw.pos == 0 {
-		if err = pw.writePDFHead(); err != nil {
-			return err
-		}
+
+	if err := pw.ensureHeader(); err != nil {
+		return err
 	}
 	n, err := fmt.Fprintf(pw.outfile, format, a...)
 	pw.pos += int64(n)
@@ -319,27 +320,30 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			resHash["ColorSpace"] = colorspace
 		}
 		if len(page.Images) > 0 {
-			var sb strings.Builder
-			sb.WriteString("<<")
+			xo := Dict{}
 			for _, img := range page.Images {
-				sb.WriteRune(' ')
-				sb.WriteString(img.InternalName())
-				sb.WriteRune(' ')
-				sb.WriteString(img.imageobject.ObjectNumber.Ref())
+				xo[Name(img.InternalName())] = img.imageobject.ObjectNumber.Ref()
 			}
-			sb.WriteString(">>")
-			resHash["XObject"] = sb.String()
+			resHash["XObject"] = xo
 		}
-
 		pageHash := Dict{
 			"Type":     "/Page",
 			"Contents": page.contentStream.ObjectNumber.Ref(),
 			"Parent":   pagesObj.ObjectNumber.Ref(),
 		}
-		if page.OffsetX != pw.DefaultOffsetX || page.OffsetY != pw.DefaultOffsetY || page.Width != pw.DefaultPageWidth || page.Height != pw.DefaultPageHeight {
-			pageHash["MediaBox"] = fmt.Sprintf("[%s %s %s %s]", FloatToPoint(page.OffsetX), FloatToPoint(page.OffsetY), FloatToPoint(page.Width), FloatToPoint(page.Height))
-		}
+		// MediaBox must be [llx lly urx ury] = [OffsetX OffsetY OffsetX+Width OffsetY+Height]
+		if page.OffsetX != pw.DefaultOffsetX || page.OffsetY != pw.DefaultOffsetY ||
+			page.Width != pw.DefaultPageWidth || page.Height != pw.DefaultPageHeight {
 
+			urx := page.OffsetX + page.Width
+			ury := page.OffsetY + page.Height
+			pageHash["MediaBox"] = fmt.Sprintf("[%s %s %s %s]",
+				FloatToPoint(page.OffsetX),
+				FloatToPoint(page.OffsetY),
+				FloatToPoint(urx),
+				FloatToPoint(ury),
+			)
+		}
 		if len(resHash) > 0 {
 			pageHash["Resources"] = resHash
 		}
@@ -380,11 +384,16 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	}
 
 	pw.pages.objnum = pagesObj.ObjectNumber
+	urx := pw.DefaultOffsetX + pw.DefaultPageWidth
+	ury := pw.DefaultOffsetY + pw.DefaultPageHeight
 	pagesObj.Dict(Dict{
-		"Type":     "/Pages",
-		"Kids":     "[ " + strings.Join(kids, " ") + " ]",
-		"Count":    fmt.Sprint(len(pw.pages.Pages)),
-		"MediaBox": fmt.Sprintf("[%s %s %s %s]", FloatToPoint(pw.DefaultOffsetX), FloatToPoint(pw.DefaultOffsetY), FloatToPoint(pw.DefaultPageWidth), FloatToPoint(pw.DefaultPageHeight)),
+		"Type":  "/Pages",
+		"Kids":  "[ " + strings.Join(kids, " ") + " ]",
+		"Count": fmt.Sprint(len(pw.pages.Pages)),
+		"MediaBox": fmt.Sprintf("[%s %s %s %s]",
+			FloatToPoint(pw.DefaultOffsetX), FloatToPoint(pw.DefaultOffsetY),
+			FloatToPoint(urx), FloatToPoint(ury),
+		),
 	})
 	if err = pagesObj.Save(); err != nil {
 		return 0, err
@@ -582,6 +591,7 @@ func (pw *PDF) Finish() error {
 			}
 		}
 	}
+
 	var str strings.Builder
 
 	for _, chunk := range objectChunks {
@@ -623,6 +633,18 @@ func (pw *PDF) Finish() error {
 	return nil
 }
 
+// FinishAndClose writes the trailer and xref section and closes the file if it
+// implements io.Closer.
+func (pw *PDF) FinishAndClose() error {
+	if err := pw.Finish(); err != nil {
+		return err
+	}
+	if closer, ok := pw.outfile.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // Size returns the current size of the PDF file.
 func (pw *PDF) Size() int64 {
 	return pw.pos
@@ -661,7 +683,9 @@ func (pw *PDF) eol() {
 	}
 }
 
-// Write a start object marker with the next free object.
+// Write a start object marker with the next free object. We prepend a newline
+// before the "N 0 obj" line. The object's byte offset (used by xref) must point
+// to the 'N' of that line; hence pos+1.
 func (pw *PDF) startObject(onum Objectnumber) error {
 	var position int64
 	if pw.pos == 0 {
@@ -676,10 +700,8 @@ func (pw *PDF) startObject(onum Objectnumber) error {
 	return nil
 }
 
-// Write a simple "endobj" to the PDF file. Return the object number.
-func (pw *PDF) endObject() Objectnumber {
-	onum := pw.nextobject
+// Write a simple "endobj" to the PDF file.
+func (pw *PDF) endObject() {
 	pw.eol()
 	pw.Println("endobj")
-	return onum
 }

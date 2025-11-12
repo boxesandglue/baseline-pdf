@@ -65,13 +65,15 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 	}
 	imgCfg, format, err := image.DecodeConfig(r)
 	if errors.Is(err, image.ErrFormat) {
-		// let's try PDF
 		return tryParsePDFWithBox(pw, r, filename, box, pagenumber)
 	}
 	if err != nil {
 		return nil, err
 	}
 
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
 	imgf := &Imagefile{
 		Filename:      filename,
 		Format:        format,
@@ -91,6 +93,14 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 	}
 
 	return imgf, nil
+}
+
+// Close closes the underlying file handle.
+func (imgf *Imagefile) Close() error {
+	if c, ok := imgf.r.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 // LoadImageFile loads an image from the disc. For PDF files it defaults to page
@@ -218,29 +228,60 @@ func intersectBox(bx map[string]float64, mediabox map[string]float64) map[string
 	return newbox
 }
 
-// GetPDFBoxDimensions returns the dimensions for the given box. Box must be one
-// of "/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox".
-func (imgf *Imagefile) GetPDFBoxDimensions(p int, boxname string) (map[string]float64, error) {
-	if p > imgf.NumberOfPages {
-		return nil, fmt.Errorf("cannot get the page number %d of the PDF, the PDF has only %d page(s)", p, imgf.NumberOfPages)
+// GetPDFBoxDimensions returns normalized box dimensions for the given page and box name.
+// It always computes x, y, w, h and clamps non-Media boxes to the MediaBox.
+// Supported names: "/MediaBox", "/CropBox", "/BleedBox", "/TrimBox", "/ArtBox".
+// Fallbacks:
+//   - missing /CropBox -> /MediaBox
+//   - missing /ArtBox|/BleedBox|/TrimBox -> /CropBox if present, else /MediaBox
+func (imgf *Imagefile) GetPDFBoxDimensions(p int, boxName string) (map[string]float64, error) {
+	// sanity: page present?
+	pg, ok := imgf.PageSizes[p]
+	if !ok || pg == nil {
+		return nil, fmt.Errorf("page %d not found", p)
 	}
-	bx := imgf.PageSizes[p][boxname]
-	if len(bx) == 0 {
-		if boxname == "/CropBox" {
-			return imgf.PageSizes[p]["/MediaBox"], nil
+
+	// media box is required as clamp reference
+	mb := pg["/MediaBox"]
+	if len(mb) == 0 {
+		return nil, fmt.Errorf("page %d has no /MediaBox", p)
+	}
+
+	// helper to pick a source box with fallbacks
+	pick := func(name string) map[string]float64 {
+		if b := pg[name]; len(b) != 0 {
+			return b
 		}
-		switch boxname {
+		if name == "/CropBox" {
+			// /CropBox falls back to /MediaBox
+			return mb
+		}
+		switch name {
 		case "/ArtBox", "/BleedBox", "/TrimBox":
-			return imgf.GetPDFBoxDimensions(p, "/CropBox")
+			if cb := pg["/CropBox"]; len(cb) != 0 {
+				return cb
+			}
+			return mb
 		default:
-			// unknown box dimensions
-			return nil, fmt.Errorf("could not find the box dimensions for the image (box %s)", boxname)
+			return nil
 		}
 	}
-	if boxname == "/MediaBox" {
-		return bx, nil
+
+	src := pick(boxName)
+	if len(src) == 0 {
+		return nil, fmt.Errorf("unknown box %q on page %d", boxName, p)
 	}
-	return intersectBox(bx, imgf.PageSizes[p]["/MediaBox"]), nil
+
+	// Normalize:
+	// - For /MediaBox: compute x,y,w,h (intersect with itself just to fill fields)
+	// - For others: intersect against /MediaBox to clamp within page
+	if boxName == "/MediaBox" {
+		out := intersectBox(src, src) // computes x,y,w,h
+		return out, nil
+	}
+
+	out := intersectBox(src, mb)
+	return out, nil
 }
 
 // InternalName returns a PDF usable name such as /F1
@@ -270,10 +311,7 @@ func finishPDF(imgf *Imagefile) error {
 }
 
 func haveSMask(imginfo *Imagefile) bool {
-	if imginfo.smask != nil && len(imginfo.smask) > 0 {
-		return true
-	}
-	return false
+	return len(imginfo.smask) > 0
 }
 
 func finishBitmap(imgf *Imagefile) error {
@@ -286,7 +324,7 @@ func finishBitmap(imgf *Imagefile) error {
 		"Height":           fmt.Sprintf("%d", imgf.H),
 	}
 
-	if imgf.trns != nil && len(imgf.trns) > 0 {
+	if len(imgf.trns) > 0 {
 		j := 0
 		content := []byte{}
 		max := len(imgf.trns)
@@ -312,7 +350,7 @@ func finishBitmap(imgf *Imagefile) error {
 		d["ColorSpace"] = fmt.Sprintf("[/Indexed /DeviceRGB %d %s]", size, palObj.ObjectNumber.Ref())
 	}
 	if imgf.decodeParms != nil {
-		d["/DecodeParms"] = imgf.decodeParms
+		d["DecodeParms"] = imgf.decodeParms
 	}
 	imgo := imgf.imageobject
 

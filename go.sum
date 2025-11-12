@@ -1,7 +1,7 @@
 github.com/benoitkugler/textlayout-testdata v0.1.1 h1:AvFxBxpfrQd8v55qH59mZOJOQjtD6K2SFe9/HvnIbJk=
 github.com/benoitkugler/textlayout-testdata v0.1.1/go.mod h1:i/qZl09BbUOtd7Bu/W1CAubRwTWrEXWq6JwMkw8wYxo=
-github.com/boxesandglue/gofpdi v1.0.20 h1:rKohyGsIEd+MsgDJhXo2WF6+riqpEqXhvI0zqiMoEtU=
-github.com/boxesandglue/gofpdi v1.0.20/go.mod h1:4wg4byd8re5WDzpSp9F4ODu5UjbeBc0sXXx15HTK4OI=
+github.com/boxesandglue/gofpdi v1.0.21 h1:3smZ4iP1LiegX/mvDDMoJMNbfrnR0DPyRpzygBQ5Ooo=
+github.com/boxesandglue/gofpdi v1.0.21/go.mod h1:4wg4byd8re5WDzpSp9F4ODu5UjbeBc0sXXx15HTK4OI=
 github.com/boxesandglue/textlayout v1.0.5 h1:kqnpeAlMCPtNINrgTjPu2tD0394caitjo1bBRUre9A4=
 github.com/boxesandglue/textlayout v1.0.5/go.mod h1:mTPr03F8rHmxQqlzIAv0szMo7fTik6ocLTjOxoB66fE=
 golang.org/x/image v0.27.0 h1:C8gA4oWU/tKkdCfYT6T2u4faJu3MeNS5O8UPWlPF61w=

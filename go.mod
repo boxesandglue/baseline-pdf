@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.0
 
 require (
-	github.com/boxesandglue/gofpdi v1.0.20
+	github.com/boxesandglue/gofpdi v1.0.21
 	github.com/boxesandglue/textlayout v1.0.5
 
 )
