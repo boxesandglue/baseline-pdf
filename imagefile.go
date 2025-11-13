@@ -77,7 +77,7 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 	imgf := &Imagefile{
 		Filename:      filename,
 		Format:        format,
-		id:            <-ids,
+		id:            nextID(),
 		pw:            pw,
 		r:             r,
 		ScaleX:        1,
@@ -164,7 +164,7 @@ func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, p
 		Format:     "pdf",
 		Box:        box,
 		PageNumber: pagenumber,
-		id:         <-ids,
+		id:         nextID(),
 		pw:         pw,
 		r:          r,
 	}

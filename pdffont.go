@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/boxesandglue/textlayout/fonts"
 	"github.com/boxesandglue/textlayout/fonts/truetype"
@@ -11,25 +12,12 @@ import (
 )
 
 var (
-	ids chan int
+	integerSequence int64
 )
 
-func genIntegerSequence(ids chan int) {
-	i := int(0)
-	for {
-		ids <- i
-		i++
-	}
-}
-
-func init() {
-	ids = make(chan int)
-	go genIntegerSequence(ids)
-}
-
-// newInternalFontName returns a font name for the PDF such as /F1.
-func newInternalFontName() string {
-	return fmt.Sprintf("/F%d", <-ids)
+// nextID generates a new unique face ID.
+func nextID() int {
+	return int(atomic.AddInt64(&integerSequence, 1))
 }
 
 // Face represents a font structure with no specific size. To get the dimensions
@@ -75,7 +63,7 @@ func (face *Face) RegisterChar(codepoint int) {
 func fillFaceObject(hbFace harfbuzz.Face) (*Face, error) {
 	cm, _ := hbFace.Cmap()
 	face := Face{
-		FaceID:         <-ids,
+		FaceID:         nextID(),
 		UnitsPerEM:     int32(hbFace.Upem()),
 		HarfbuzzFont:   harfbuzz.NewFont(hbFace),
 		PostscriptName: hbFace.PostscriptName(),
@@ -101,11 +89,15 @@ func (pw *PDF) NewFaceFromData(data []byte, idx int) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
+	if idx < 0 || idx >= len(fnt) {
+		return nil, fmt.Errorf("font index %d out of range (0..%d)", idx, len(fnt)-1)
+	}
 	requestedFace := fnt[idx]
 	f, err := fillFaceObject(requestedFace)
 	if err != nil {
 		return nil, err
 	}
+	f.Filename = "(embedded)"
 	f.pw = pw
 	f.fontobject = pw.NewObject()
 	return f, nil
@@ -119,14 +111,17 @@ func (pw *PDF) LoadFace(filename string, idx int) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	Logger.Info("Load font", "filename", filename)
 	fnt, err := truetype.Load(r)
 	if err != nil {
 		return nil, err
 	}
-	firstface := fnt[0]
-
-	f, err := fillFaceObject(firstface)
+	if idx < 0 || idx >= len(fnt) {
+		return nil, fmt.Errorf("font index %d out of range (0..%d)", idx, len(fnt)-1)
+	}
+	requestedFace := fnt[idx]
+	f, err := fillFaceObject(requestedFace)
 	if err != nil {
 		return nil, err
 	}

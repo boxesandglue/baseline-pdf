@@ -88,10 +88,12 @@ func serializeLevel(item any, level int) string {
 		var out strings.Builder
 		out.WriteString("[ ")
 		for _, k := range keys {
-			out.WriteString(fmt.Sprintf("%s %s ", stringToPDF(k), t[String(k)]))
+			out.WriteString(fmt.Sprintf("%s %s ", stringToPDF(k), t[String(k)].Ref()))
 		}
 		out.WriteString("]")
 		return out.String()
+	case Objectnumber:
+		return t.Ref()
 	default:
 		return fmt.Sprintf("%s", t)
 	}
