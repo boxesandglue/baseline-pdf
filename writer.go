@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
@@ -152,7 +153,9 @@ type PDF struct {
 	zlibWriter *zlib.Writer
 }
 
-// NewPDFWriter creates a PDF file for writing to file
+// NewPDFWriter initializes and returns a PDF writer targeting file. It sets PDF
+// version 1.7, prepares internal maps, a reusable zlib writer, and starts
+// object numbering at 1 (object 0 is the free head entry).
 func NewPDFWriter(file io.Writer) *PDF {
 	pw := PDF{
 		Major:            1,
@@ -161,6 +164,7 @@ func NewPDFWriter(file io.Writer) *PDF {
 		objectlocations:  make(map[Objectnumber]int64),
 		zlibWriter:       zlib.NewWriter(io.Discard),
 		names:            make(Dict),
+		InfoDict:         make(Dict),
 	}
 	pw.outfile = file
 	pw.nextobject = 1
@@ -249,10 +253,45 @@ func (pw *PDF) NextObject() Objectnumber {
 	return pw.nextobject - 1
 }
 
+// pdfCreationDate returns a PDF-compliant CreationDate string.
+// If t is the zero value, the current local time (time.Now()) is used.
+//
+// PDF format: D:YYYYMMDDHHmmSSOHH'mm'
+// Example:    D:20251114123045+01'00'
+func pdfCreationDate(t time.Time) string {
+	if t.IsZero() {
+		t = time.Now()
+	}
+
+	// Go layout "20060102150405-0700" -> YYYYMMDDHHmmSS±HHMM
+	s := t.Format("20060102150405-0700")
+
+	// Split into date/time and offset parts
+	dateTime := s[:14] // YYYYMMDDHHmmSS
+	sign := s[14:15]   // + or -
+	hour := s[15:17]   // offset hour
+	min := s[17:19]    // offset minute
+
+	// Build PDF date string
+	return fmt.Sprintf("D:%s%s%s'%s'", dateTime, sign, hour, min)
+}
+
 func (pw *PDF) writeInfoDict() (*Object, error) {
 	if pw.Major < 2 {
 		info := pw.NewObject()
 		info.Dictionary = pw.InfoDict
+		if info.Dictionary == nil {
+			info.Dictionary = make(Dict)
+		}
+		if info.Dictionary["Producer"] == nil {
+			info.Dictionary["Producer"] = stringToPDF("baseline-pdf/boxes and glue")
+		}
+		if info.Dictionary["Creator"] == nil {
+			info.Dictionary["Creator"] = stringToPDF("baseline-pdf")
+		}
+		if info.Dictionary["CreationDate"] == nil {
+			info.Dictionary["CreationDate"] = pdfCreationDate(time.Now())
+		}
 		info.Save()
 		return info, nil
 	}
