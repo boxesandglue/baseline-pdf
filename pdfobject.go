@@ -95,7 +95,7 @@ func serializeLevel(item any, level int) string {
 	case Objectnumber:
 		return t.Ref()
 	default:
-		return fmt.Sprintf("%s", t)
+		return fmt.Sprintf("%v", t)
 	}
 }
 
@@ -124,7 +124,7 @@ type Object struct {
 	Dictionary   Dict
 	Array        []any
 	Raw          bool // Data holds everything between object number and endobj
-	ForceStream  bool
+	ForceStream  bool // Write stream even if Data is empty
 	pdfwriter    *PDF
 	compress     bool // for streams
 	comment      string

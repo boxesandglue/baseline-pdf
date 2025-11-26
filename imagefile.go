@@ -31,7 +31,7 @@ type Imagefile struct {
 	W                int
 	H                int
 	Box              string
-	PageNumber       int
+	PageNumber       int // The requested page number for PDF images (1-based)
 	r                io.ReadSeeker
 	pdfimporter      *gofpdi.Importer
 	pw               *PDF
@@ -47,16 +47,8 @@ type Imagefile struct {
 	data             []byte
 }
 
-// sortImagefile is used to sort the order of the written images in the PDF
-// file to create reproducible builds.
-type sortImagefile []*Imagefile
-
-func (a sortImagefile) Len() int           { return len(a) }
-func (a sortImagefile) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortImagefile) Less(i, j int) bool { return a[i].Filename < a[j].Filename }
-
 // LoadImageFileWithBox loads an image from the disc with the given box and page
-// number.
+// number. If box is empty, it defaults to /MediaBox.
 func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int) (*Imagefile, error) {
 	Logger.Info("Load image", "filename", filename)
 	r, err := os.Open(filename)
@@ -149,7 +141,11 @@ func (imgf *Imagefile) createSMaskObject() Objectnumber {
 	return sm.ObjectNumber
 }
 
+// if box is empty, defaults to /MediaBox
 func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, pagenumber int) (*Imagefile, error) {
+	if box == "" {
+		box = "/MediaBox"
+	}
 	r.Seek(0, io.SeekStart)
 	b, err := readBytes(r, 4)
 	if err != nil {

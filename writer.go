@@ -54,20 +54,6 @@ type Array []any
 // a / (slash) to the name if not present.
 type Name string
 
-// sortByName implements the sorting sequence.
-type sortByName []Name
-
-func (a sortByName) Len() int      { return len(a) }
-func (a sortByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a sortByName) Less(i, j int) bool {
-	if a[i] == "Type" {
-		return true
-	} else if a[j] == "Type" {
-		return false
-	}
-	return a[i] < a[j]
-}
-
 func (n Name) String() string {
 	r, _ := strings.CutPrefix(string(n), "/")
 	return "/" + pdfNameReplacer.Replace(r)
@@ -253,12 +239,12 @@ func (pw *PDF) NextObject() Objectnumber {
 	return pw.nextobject - 1
 }
 
-// pdfCreationDate returns a PDF-compliant CreationDate string.
+// pdfDate returns a PDF-compliant CreationDate string.
 // If t is the zero value, the current local time (time.Now()) is used.
 //
 // PDF format: D:YYYYMMDDHHmmSSOHH'mm'
 // Example:    D:20251114123045+01'00'
-func pdfCreationDate(t time.Time) string {
+func pdfDate(t time.Time) string {
 	if t.IsZero() {
 		t = time.Now()
 	}
@@ -273,7 +259,7 @@ func pdfCreationDate(t time.Time) string {
 	min := s[17:19]    // offset minute
 
 	// Build PDF date string
-	return fmt.Sprintf("D:%s%s%s'%s'", dateTime, sign, hour, min)
+	return fmt.Sprintf("(D:%s%s%s'%s')", dateTime, sign, hour, min)
 }
 
 func (pw *PDF) writeInfoDict() (*Object, error) {
@@ -290,7 +276,7 @@ func (pw *PDF) writeInfoDict() (*Object, error) {
 			info.Dictionary["Creator"] = stringToPDF("baseline-pdf")
 		}
 		if info.Dictionary["CreationDate"] == nil {
-			info.Dictionary["CreationDate"] = pdfCreationDate(time.Now())
+			info.Dictionary["CreationDate"] = pdfDate(time.Now())
 		}
 		info.Save()
 		return info, nil
@@ -325,7 +311,10 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	for k := range usedImages {
 		sortedImages = append(sortedImages, k)
 	}
-	sort.Sort(sortImagefile(sortedImages))
+	sort.Slice(sortedImages, func(i, j int) bool {
+		return sortedImages[i].id < sortedImages[j].id
+	})
+
 	for _, img := range sortedImages {
 		img.finish()
 	}
@@ -523,7 +512,10 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	for k := range usedFaces {
 		sortedFaces = append(sortedFaces, k)
 	}
-	sort.Sort(sortByFaceID(sortedFaces))
+	sort.Slice(sortedFaces, func(i, j int) bool {
+		return sortedFaces[i].FaceID < sortedFaces[j].FaceID
+	})
+
 	for _, f := range sortedFaces {
 		if err = f.finish(); err != nil {
 			return 0, err
@@ -684,7 +676,7 @@ func (pw *PDF) FinishAndClose() error {
 	return nil
 }
 
-// Size returns the current size of the PDF file.
+// Size returns the current size of the PDF file (number of bytes).
 func (pw *PDF) Size() int64 {
 	return pw.pos
 }
@@ -698,7 +690,16 @@ func hashToString(h Dict, level int) string {
 	for v := range h {
 		keys = append(keys, v)
 	}
-	sort.Sort(sortByName(keys))
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i] == "Type" {
+			return true
+		}
+		if keys[j] == "Type" {
+			return false
+		}
+		return keys[i] < keys[j]
+	})
+
 	for _, key := range keys {
 		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat(" ", level+1), key, serializeLevel(h[key], level+1)))
 	}

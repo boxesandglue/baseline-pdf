@@ -35,17 +35,23 @@ type Face struct {
 	Scale          float64
 }
 
-// sortByFaceID is used to sort the order of the written font faces in the PDF
-// file to create reproducible builds.
-type sortByFaceID []*Face
-
-func (a sortByFaceID) Len() int           { return len(a) }
-func (a sortByFaceID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortByFaceID) Less(i, j int) bool { return a[i].FaceID < a[j].FaceID }
-
 // RegisterChars marks the codepoints as used on the page. For font subsetting.
+//
+// Deprecated: use RegisterCodepoints instead.
 func (face *Face) RegisterChars(codepoints []int) {
-	// RegisterChars tells the PDF file which fonts are used on a page and which
+	face.RegisterCodepoints(codepoints)
+}
+
+// RegisterChar marks the codepoint as used on the page. For font subsetting.
+//
+// Deprecated: use RegisterCodepoint instead.
+func (face *Face) RegisterChar(codepoint int) {
+	face.RegisterCodepoint(codepoint)
+}
+
+// RegisterCodepoints marks the codepoints as used on the page. For font subsetting.
+func (face *Face) RegisterCodepoints(codepoints []int) {
+	// RegisterCodepoints tells the PDF file which fonts are used on a page and which
 	// characters are included. The slice must include every used char in this
 	// font in any order at least once.
 	face.usedChar[0] = true
@@ -54,8 +60,8 @@ func (face *Face) RegisterChars(codepoints []int) {
 	}
 }
 
-// RegisterChar marks the codepoint as used on the page. For font subsetting.
-func (face *Face) RegisterChar(codepoint int) {
+// RegisterCodepoint marks the codepoint as used on the page. For font subsetting.
+func (face *Face) RegisterCodepoint(codepoint int) {
 	face.usedChar[0] = true
 	face.usedChar[codepoint] = true
 }
