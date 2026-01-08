@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-
 	"image"
 	"image/color"
+	"io"
+	"os"
 
 	// Packages image/jpeg and image/png are not used explicitly in the code below,
 	// but are imported for their initialization side-effect, which allows
@@ -368,7 +367,6 @@ func finishBitmap(imgf *Imagefile) error {
 	imgo.Save()
 
 	return nil
-
 }
 
 func (imgf *Imagefile) finish() error {
