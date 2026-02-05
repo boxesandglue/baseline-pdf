@@ -10,7 +10,7 @@ This library has a [godoc reference](https://pkg.go.dev/github.com/boxesandglue/
 
 # Version 1.1
 
-Starting with version 1.1, baseline-pdf uses [textshape](https://github.com/boxesandglue/textshape) for font handling (parsing, shaping, subsetting). This replaces the previous dependency on [textlayout](https://github.com/boxesandglue/textlayout), which is now obsolete.
+Starting with version 1.1, baseline-pdf uses [textshape](https://github.com/boxesandglue/textshape) for font handling (parsing, shaping, subsetting).
 
 New features in 1.1:
 - Variable font support with instancing (convert variable fonts to static instances)
