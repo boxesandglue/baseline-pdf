@@ -49,13 +49,7 @@ func readInt(f io.Reader) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	var v int
-	if u >= 0x8000 {
-		v = int(u) - 65536
-	} else {
-		v = int(u)
-	}
-	return v, nil
+	return int(u), nil
 }
 
 func readBytes(f io.Reader, len int) ([]byte, error) {

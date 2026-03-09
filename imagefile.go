@@ -78,9 +78,13 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 
 	switch format {
 	case "jpeg":
-		imgf.parseJPG(imgCfg)
+		if err := imgf.parseJPG(imgCfg); err != nil {
+			return nil, err
+		}
 	case "png":
-		imgf.parsePNG()
+		if err := imgf.parsePNG(); err != nil {
+			return nil, err
+		}
 	}
 
 	return imgf, nil
@@ -319,6 +323,9 @@ func finishBitmap(imgf *Imagefile) error {
 		"Height":           fmt.Sprintf("%d", imgf.H),
 	}
 
+	if imgf.colorspace == "DeviceCMYK" {
+		d["Decode"] = "[1 0 1 0 1 0 1 0]"
+	}
 	if len(imgf.trns) > 0 {
 		j := 0
 		content := []byte{}
