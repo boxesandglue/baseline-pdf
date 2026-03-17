@@ -24,18 +24,18 @@ func nextID() int {
 // Face represents a font structure with no specific size. To get the dimensions
 // of a font, you need to create a Font object with a given size.
 type Face struct {
-	FaceID            int
 	Shaper            *ot.Shaper
-	UnitsPerEM        int32
-	Filename          string
-	PostscriptName    string
 	usedChar          map[int]bool
 	fontobject        *Object
 	pw                *PDF
-	Scale             float64
 	face              *ot.Face
 	glyphMap          map[ot.GlyphID]ot.GlyphID // old GID -> new GID (set after subsetting)
 	VariationSettings map[string]float64        // axis tag -> value for variable fonts
+	Filename          string
+	PostscriptName    string
+	FaceID            int
+	Scale             float64
+	UnitsPerEM        int32
 }
 
 // RegisterChars marks the codepoints as used on the page. For font subsetting.
@@ -167,6 +167,13 @@ func (face *Face) Codepoints(runes []rune) []int {
 	return ret
 }
 
+// AdvanceWidth returns the advance width of the glyph with the given ID
+// in PDF text space units (1/1000 of text space, scaled by face.Scale).
+func (face *Face) AdvanceWidth(glyphID int) float64 {
+	adv := face.face.HorizontalAdvance(ot.GlyphID(glyphID))
+	return float64(adv) / float64(face.UnitsPerEM) * face.Scale
+}
+
 // OTFace returns the underlying ot.Face for direct access.
 func (face *Face) OTFace() *ot.Face {
 	return face.face
@@ -274,15 +281,12 @@ func bboxPDF(f *ot.Face) string {
 
 // flagsPDF returns the PDF font flags.
 func flagsPDF(f *ot.Face) int {
-	flags := 0
+	flags := 32 // Nonsymbolic (bit 6) — required for non-symbol fonts
 	if f.IsFixedPitch() {
-		flags |= 1 // FixedPitch
+		flags |= 1 // FixedPitch (bit 1)
 	}
 	if f.IsItalic() {
-		flags |= 64 // Italic
-	}
-	if flags == 0 {
-		flags = 4 // Non-symbolic
+		flags |= 64 // Italic (bit 7)
 	}
 	return flags
 }
@@ -328,11 +332,14 @@ func widthsPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.
 	c := 0
 	for c < len(sorted) {
 		cp := sorted[c]
-		fmt.Fprintf(&b, "%d[%s", cp, getWd(cp))
+		writeInt(&b, int(cp))
+		b.WriteByte('[')
+		b.WriteString(getWd(cp))
 		c++
 		for c < len(sorted) && sorted[c] == cp+1 {
 			cp++
-			fmt.Fprintf(&b, " %s", getWd(cp))
+			b.WriteByte(' ')
+			b.WriteString(getWd(cp))
 			c++
 		}
 		b.WriteString("]")
@@ -373,16 +380,22 @@ begincmap
 /CMapName /Adobe-Identity-UCS def /CMapType 2 def
 1 begincodespacerange
 `)
-	fmt.Fprintf(&b, "<0001><%04X>\n", maxGlyph+1)
-	b.WriteString("endcodespacerange\n")
-	fmt.Fprintf(&b, "%d beginbfchar\n", len(newGlyphs))
+	b.WriteString("<0001><")
+	writeHex4Upper(&b, uint16(maxGlyph+1))
+	b.WriteString(">\nendcodespacerange\n")
+	writeInt(&b, len(newGlyphs))
+	b.WriteString(" beginbfchar\n")
 	for _, newGID := range newGlyphs {
 		oldGID := reverseMap[newGID]
 		r := glyphToUnicode[oldGID]
 		if r == 0 {
 			r = 0xFFFD
 		}
-		fmt.Fprintf(&b, "<%04X><%04X>\n", newGID, r)
+		b.WriteByte('<')
+		writeHex4Upper(&b, uint16(newGID))
+		b.WriteString("><")
+		writeHex4Upper(&b, uint16(r))
+		b.WriteString(">\n")
 	}
 	b.WriteString(`endbfchar
 endcmap CMapName currentdict /CMap defineresource pop end end`)
@@ -493,13 +506,13 @@ func (face *Face) finish() error {
 		"Type":        "/FontDescriptor",
 		"FontName":    fontNamePDF(f, tag),
 		"FontBBox":    bboxPDF(f),
-		"Ascent":      fmt.Sprintf("%d", f.Ascender()),
-		"Descent":     fmt.Sprintf("%d", f.Descender()),
-		"CapHeight":   fmt.Sprintf("%d", f.CapHeight()),
-		"Flags":       fmt.Sprintf("%d", flagsPDF(f)),
-		"ItalicAngle": fmt.Sprintf("%d", f.ItalicAngle()>>16),
-		"StemV":       fmt.Sprintf("%d", stemVPDF(f)),
-		"XHeight":     fmt.Sprintf("%d", f.XHeight()),
+		"Ascent":      strconv.Itoa(int(f.Ascender())),
+		"Descent":     strconv.Itoa(int(f.Descender())),
+		"CapHeight":   strconv.Itoa(int(f.CapHeight())),
+		"Flags":       strconv.Itoa(flagsPDF(f)),
+		"ItalicAngle": strconv.Itoa(int(f.ItalicAngle() >> 16)),
+		"StemV":       strconv.Itoa(stemVPDF(f)),
+		"XHeight":     strconv.Itoa(int(f.XHeight())),
 	}
 	if isCFF {
 		fontDescriptor["FontFile3"] = fontstream.ObjectNumber.Ref()
@@ -539,7 +552,7 @@ func (face *Face) finish() error {
 	fontObj := face.fontobject
 	fontObj.Dict(Dict{
 		"BaseFont":        fontNamePDF(f, tag),
-		"DescendantFonts": fmt.Sprintf("[%s]", cidFontType2Obj.ObjectNumber.Ref()),
+		"DescendantFonts": "[" + cidFontType2Obj.ObjectNumber.Ref() + "]",
 		"Encoding":        "/Identity-H",
 		"Subtype":         "/Type0",
 		"ToUnicode":       cmapObj.ObjectNumber.Ref(),

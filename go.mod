@@ -6,5 +6,5 @@ toolchain go1.24.0
 
 require (
 	github.com/boxesandglue/gofpdi v1.0.22
-	github.com/boxesandglue/textshape v0.0.7
+	github.com/boxesandglue/textshape v0.0.9
 )

@@ -10,13 +10,50 @@ import (
 	"unicode/utf16"
 )
 
-var pdfStringReplacer = strings.NewReplacer(`(`, `\(`, `)`, `\)`, `\`, `\\`, "\n", `\n`, "\r", `\r`, "\t", `\t`, "\b", `\b`, "\t", `\t`)
+// unicodeToPDFDocEncoding maps Unicode codepoints in the 0x80–0x9F range
+// of PDFDocEncoding to their byte values. Codepoints U+00A0–U+00FF map
+// directly to bytes 0xA0–0xFF and need no table entry.
+// Reference: PDF 32000-1:2008, Table D.2.
+var unicodeToPDFDocEncoding = map[rune]byte{
+	0x2022: 0x80, // bullet
+	0x2020: 0x81, // dagger
+	0x2021: 0x82, // double dagger
+	0x2026: 0x83, // horizontal ellipsis
+	0x2014: 0x84, // em dash
+	0x2013: 0x85, // en dash
+	0x0192: 0x86, // latin small f with hook
+	0x2044: 0x87, // fraction slash
+	0x2039: 0x88, // single left-pointing angle quotation mark
+	0x203A: 0x89, // single right-pointing angle quotation mark
+	0x2212: 0x8A, // minus sign
+	0x2030: 0x8B, // per mille sign
+	0x201E: 0x8C, // double low-9 quotation mark „
+	0x201C: 0x8D, // left double quotation mark "
+	0x201D: 0x8E, // right double quotation mark "
+	0x2018: 0x8F, // left single quotation mark '
+	0x2019: 0x90, // right single quotation mark '
+	0x201A: 0x91, // single low-9 quotation mark ‚
+	0x2122: 0x92, // trade mark sign
+	0xFB01: 0x93, // fi ligature
+	0xFB02: 0x94, // fl ligature
+	0x0141: 0x95, // latin capital L with stroke
+	0x0152: 0x96, // latin capital ligature OE
+	0x0160: 0x97, // latin capital S with caron
+	0x0178: 0x98, // latin capital Y with diaeresis
+	0x017D: 0x99, // latin capital Z with caron
+	0x0131: 0x9A, // latin small dotless i
+	0x0142: 0x9B, // latin small l with stroke
+	0x0153: 0x9C, // latin small ligature oe
+	0x0161: 0x9D, // latin small s with caron
+	0x017E: 0x9E, // latin small z with caron
+	0x20AC: 0xA0, // euro sign (mapped to 0xA0 in PDFDocEncoding)
+}
 
 // NameDest represents a named PDF destination. The origin of X and Y are in the
 // top left corner and expressed in DTP points.
 type NameDest struct {
-	PageObjectnumber Objectnumber
 	Name             String
+	PageObjectnumber Objectnumber
 	X                float64
 	Y                float64
 	objectnumber     Objectnumber
@@ -32,24 +69,56 @@ type NameTreeData map[String]Objectnumber
 type String string
 
 // stringToPDF returns an escaped string suitable to be used as a PDF object.
+// It uses PDFDocEncoding (parenthesized literal) when all characters are
+// representable, and falls back to UTF-16BE hex encoding otherwise.
 func stringToPDF(str string) string {
-	isASCII := true
-	for _, g := range str {
-		if g > 127 {
-			isASCII = false
-			break
+	// Check if the string can be encoded in PDFDocEncoding.
+	canEncode := true
+	for _, r := range str {
+		if r <= 0x7F {
+			continue
 		}
+		if r >= 0x00A1 && r <= 0x00FF {
+			// Latin-1 supplement (excluding U+00A0 which is used for €)
+			continue
+		}
+		if _, ok := unicodeToPDFDocEncoding[r]; ok {
+			continue
+		}
+		canEncode = false
+		break
 	}
+
 	var out strings.Builder
-	if isASCII {
+	if canEncode {
 		out.WriteRune('(')
-		out.WriteString(pdfStringReplacer.Replace(str))
+		for _, r := range str {
+			switch {
+			case r == '(' || r == ')' || r == '\\':
+				out.WriteRune('\\')
+				out.WriteRune(r)
+			case r == '\n':
+				out.WriteString(`\n`)
+			case r == '\r':
+				out.WriteString(`\r`)
+			case r == '\t':
+				out.WriteString(`\t`)
+			case r == '\b':
+				out.WriteString(`\b`)
+			case r <= 0x7F:
+				out.WriteRune(r)
+			case r >= 0x00A1 && r <= 0x00FF:
+				out.WriteByte(byte(r))
+			default:
+				out.WriteByte(unicodeToPDFDocEncoding[r])
+			}
+		}
 		out.WriteRune(')')
 		return out.String()
 	}
 	out.WriteString("<feff")
 	for _, i := range utf16.Encode([]rune(str)) {
-		out.WriteString(fmt.Sprintf("%04x", i))
+		writeHex4(&out, i)
 	}
 	out.WriteRune('>')
 	return out.String()
@@ -71,7 +140,7 @@ func serializeLevel(item any, level int) string {
 	case Array:
 		return arrayToString(t)
 	case int:
-		return fmt.Sprintf("%d", t)
+		return strconv.Itoa(t)
 	case float64:
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	case Dict:
@@ -88,7 +157,10 @@ func serializeLevel(item any, level int) string {
 		var out strings.Builder
 		out.WriteString("[ ")
 		for _, k := range keys {
-			out.WriteString(fmt.Sprintf("%s %s ", stringToPDF(k), t[String(k)].Ref()))
+			out.WriteString(stringToPDF(k))
+			out.WriteByte(' ')
+			out.WriteString(t[String(k)].Ref())
+			out.WriteByte(' ')
 		}
 		out.WriteString("]")
 		return out.String()
@@ -119,15 +191,15 @@ func FloatToPoint(in float64) string {
 
 // Object has information about a specific PDF object
 type Object struct {
-	ObjectNumber Objectnumber
 	Data         *bytes.Buffer
 	Dictionary   Dict
+	pdfwriter    *PDF
+	comment      string
 	Array        []any
+	ObjectNumber Objectnumber
 	Raw          bool // Data holds everything between object number and endobj
 	ForceStream  bool // Write stream even if Data is empty
-	pdfwriter    *PDF
 	compress     bool // for streams
-	comment      string
 	saved        bool // set to true when object is written to the PDF file
 }
 
@@ -191,7 +263,7 @@ func (obj *Object) Save() error {
 		if obj.Dictionary == nil {
 			obj.Dictionary = Dict{}
 		}
-		obj.Dictionary["Length"] = fmt.Sprintf("%d", obj.Data.Len())
+		obj.Dictionary["Length"] = strconv.Itoa(obj.Data.Len())
 
 		if obj.compress {
 			obj.Dictionary["Filter"] = "/FlateDecode"
@@ -201,11 +273,11 @@ func (obj *Object) Save() error {
 				return err
 			}
 			obj.pdfwriter.zlibWriter.Close()
-			obj.Dictionary["Length"] = fmt.Sprintf("%d", b.Len())
-			obj.Dictionary["Length1"] = fmt.Sprintf("%d", obj.Data.Len())
+			obj.Dictionary["Length"] = strconv.Itoa(b.Len())
+			obj.Dictionary["Length1"] = strconv.Itoa(obj.Data.Len())
 			obj.Data = &b
 		} else {
-			obj.Dictionary["Length"] = fmt.Sprintf("%d", obj.Data.Len())
+			obj.Dictionary["Length"] = strconv.Itoa(obj.Data.Len())
 		}
 	}
 

@@ -21,29 +21,29 @@ import (
 // Imagefile represents a physical image file. Images to be place in the PDF
 // must be derived from the image.
 type Imagefile struct {
-	Format           string
-	NumberOfPages    int
-	PageSizes        map[int]map[string]map[string]float64
-	Filename         string
-	ScaleX           float64
-	ScaleY           float64
-	W                int
-	H                int
-	Box              string
-	PageNumber       int // The requested page number for PDF images (1-based)
 	r                io.ReadSeeker
+	PageSizes        map[int]map[string]map[string]float64
 	pdfimporter      *gofpdi.Importer
 	pw               *PDF
 	imageobject      *Object
-	id               int
+	decodeParms      Dict
+	decodeParmsSmask Dict
+	Format           string
+	Filename         string
+	Box              string
 	colorspace       string
 	bitsPerComponent string
 	trns             []byte
 	smask            []byte
 	pal              []byte
-	decodeParms      Dict
-	decodeParmsSmask Dict
 	data             []byte
+	NumberOfPages    int
+	ScaleX           float64
+	ScaleY           float64
+	W                int
+	H                int
+	PageNumber       int // The requested page number for PDF images (1-based)
+	id               int
 }
 
 // LoadImageFileWithBox loads an image from the disc with the given box and page

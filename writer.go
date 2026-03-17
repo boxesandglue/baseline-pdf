@@ -10,6 +10,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,12 +31,12 @@ type Objectnumber int
 
 // Ref returns a reference to the object number
 func (o Objectnumber) Ref() string {
-	return fmt.Sprintf("%d 0 R", o)
+	return strconv.Itoa(int(o)) + " 0 R"
 }
 
 // String returns a reference to the object number
 func (o Objectnumber) String() string {
-	return fmt.Sprintf("%d", o)
+	return strconv.Itoa(int(o))
 }
 
 // Dict is a dictionary where each key begins with a slash (/). Each value can
@@ -68,17 +69,18 @@ type Pages struct {
 // An Annotation is a PDF element that is additional to the text, such as a
 // hyperlink or a note.
 type Annotation struct {
-	Subtype    Name
-	Action     string
-	Dictionary Dict
-	Rect       [4]float64 // x1, y1, x2, y2
+	Dictionary   Dict
+	Subtype      Name
+	Action       string
+	Rect         [4]float64   // x1, y1, x2, y2
+	Objectnumber Objectnumber // pre-reserved object number (0 = auto-assign)
 }
 
 // Separation represents a spot color
 type Separation struct {
-	Obj        Objectnumber
 	ID         string
 	Name       string
+	Obj        Objectnumber
 	ICCProfile Objectnumber
 	C          float64
 	M          float64
@@ -88,55 +90,55 @@ type Separation struct {
 
 // Page contains information about a single page.
 type Page struct {
-	Objnum        Objectnumber // The "/Page" object
+	Dict          Dict // Additional dictionary entries such as "/Trimbox"
+	contentStream *Object
 	Annotations   []Annotation
 	Faces         []*Face
 	Images        []*Imagefile
+	Objnum        Objectnumber // The "/Page" object
 	Width         float64
 	Height        float64
 	OffsetX       float64
 	OffsetY       float64
-	Dict          Dict // Additional dictionary entries such as "/Trimbox"
-	contentStream *Object
 }
 
 // Outline represents PDF bookmarks. To create outlines, you need to assign
 // previously created Dest items to the outline. When Open is true, the PDF
 // viewer shows the child outlines.
 type Outline struct {
-	Children     []*Outline
 	Title        string
-	Open         bool
 	Dest         string
+	Children     []*Outline
 	objectNumber Objectnumber
+	Open         bool
 }
 
 // PDF is the central point of writing a PDF file.
 type PDF struct {
-	Catalog           Dict
-	InfoDict          Dict
-	DefaultOffsetX    float64
-	DefaultOffsetY    float64
-	DefaultPageWidth  float64
-	DefaultPageHeight float64
-	Colorspaces       []*Separation
-	NameDestinations  map[String]*NameDest
-	Outlines          []*Outline
-	Major             uint
-	Minor             uint
-	NoPages           int // set when PDF is finished
-	lastEOL           int64
-	names             Dict
-	nextobject        Objectnumber
-	objectlocations   map[Objectnumber]int64
-	outfile           io.Writer
-	pages             *Pages
-	pos               int64
+	outfile          io.Writer
+	Catalog          Dict
+	InfoDict         Dict
+	NameDestinations map[String]*NameDest
+	names            Dict
+	objectlocations  map[Objectnumber]int64
+	pages            *Pages
 
 	// having a zlib writer here and using reset removes lots
 	// of allocations that would happen with
 	// a new zlib writer for each stream
-	zlibWriter *zlib.Writer
+	zlibWriter        *zlib.Writer
+	Colorspaces       []*Separation
+	Outlines          []*Outline
+	DefaultOffsetX    float64
+	DefaultOffsetY    float64
+	DefaultPageWidth  float64
+	DefaultPageHeight float64
+	Major             uint
+	Minor             uint
+	NoPages           int // set when PDF is finished
+	lastEOL           int64
+	nextobject        Objectnumber
+	pos               int64
 }
 
 // NewPDFWriter initializes and returns a PDF writer targeting file. It sets PDF
@@ -378,7 +380,12 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 
 		annotationObjectNumbers := make([]string, len(page.Annotations))
 		for i, annot := range page.Annotations {
-			annotObj := pw.NewObject()
+			var annotObj *Object
+			if annot.Objectnumber != 0 {
+				annotObj = pw.NewObjectWithNumber(annot.Objectnumber)
+			} else {
+				annotObj = pw.NewObject()
+			}
 			annotDict := Dict{
 				"Type":    "/Annot",
 				"Subtype": annot.Subtype.String(),
@@ -461,8 +468,8 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 
 	if len(pw.NameDestinations) != 0 {
 		type name struct {
-			onum Objectnumber
 			name String
+			onum Objectnumber
 		}
 		destnames := make([]name, 0, len(pw.NameDestinations))
 
@@ -600,8 +607,8 @@ func (pw *PDF) Finish() error {
 
 	// XRef section
 	type chunk struct {
-		startOnum Objectnumber
 		positions []int64
+		startOnum Objectnumber
 	}
 	objectChunks := []chunk{}
 	var curchunk *chunk
@@ -627,12 +634,16 @@ func (pw *PDF) Finish() error {
 
 	for _, chunk := range objectChunks {
 		startOnum := chunk.startOnum
-		fmt.Fprintf(&str, "%d %d\n", chunk.startOnum, len(chunk.positions))
+		str.WriteString(strconv.Itoa(int(chunk.startOnum)))
+		str.WriteByte(' ')
+		str.WriteString(strconv.Itoa(len(chunk.positions)))
+		str.WriteByte('\n')
 		for i, pos := range chunk.positions {
+			writeZeroPadded10(&str, int(pos))
 			if int(startOnum)+i == 0 {
-				fmt.Fprintf(&str, "%010d 65535 f \n", pos)
+				str.WriteString(" 65535 f \n")
 			} else {
-				fmt.Fprintf(&str, "%010d 00000 n \n", pos)
+				str.WriteString(" 00000 n \n")
 			}
 		}
 	}
@@ -643,9 +654,9 @@ func (pw *PDF) Finish() error {
 	sum := fmt.Sprintf("%X", md5.Sum([]byte(str.String())))
 
 	trailer := Dict{
-		"Size": fmt.Sprint(int(pw.nextobject)),
+		"Size": strconv.Itoa(int(pw.nextobject)),
 		"Root": dc.Ref(),
-		"ID":   fmt.Sprintf("[<%s> <%s>]", sum, sum),
+		"ID":   "[<" + sum + "> <" + sum + ">]",
 	}
 	if infodict != nil {
 		trailer["Info"] = infodict.ObjectNumber.Ref()
@@ -701,9 +712,13 @@ func hashToString(h Dict, level int) string {
 	})
 
 	for _, key := range keys {
-		b.WriteString(fmt.Sprintf("%s%s %v\n", strings.Repeat(" ", level+1), key, serializeLevel(h[key], level+1)))
+		writeSpaces(&b, level+1)
+		b.WriteString(key.String())
+		b.WriteByte(' ')
+		b.WriteString(serializeLevel(h[key], level+1))
+		b.WriteByte('\n')
 	}
-	b.WriteString(strings.Repeat(" ", level))
+	writeSpaces(&b, level)
 	b.WriteString(">>")
 	return b.String()
 }
