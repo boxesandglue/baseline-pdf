@@ -29,8 +29,8 @@ func newReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
 func makeNRGBA(w, h int, withAlpha bool) *image.NRGBA {
 	im := image.NewNRGBA(image.Rect(0, 0, w, h))
 	// Fill with a simple pattern; alpha depends on withAlpha.
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			a := uint8(0xFF)
 			if withAlpha {
 				// vary alpha: left half opaque, right half semi-transparent
@@ -47,8 +47,8 @@ func makeNRGBA(w, h int, withAlpha bool) *image.NRGBA {
 // makeGray builds a tiny 8-bit grayscale image.
 func makeGray(w, h int) *image.Gray {
 	im := image.NewGray(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			im.SetGray(x, y, color.Gray{Y: uint8((x + y) % 256)})
 		}
 	}
@@ -64,8 +64,8 @@ func makeIndexed(w, h int) *image.Paletted {
 		color.RGBA{0x00, 0x00, 0xFF, 0xFF}, // index 3
 	}
 	im := image.NewPaletted(image.Rect(0, 0, w, h), pal)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			im.SetColorIndex(x, y, uint8((x+y)%len(pal)))
 		}
 	}

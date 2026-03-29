@@ -84,8 +84,8 @@ func makeMinimalPDF(mb [4]float64, cb [4]float64) []byte {
 func writeTempJPEG(t *testing.T, dir string, w, h int) string {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			img.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 0, 255})
 		}
 	}
@@ -107,8 +107,8 @@ func writeTempPNG(t *testing.T, dir string, w, h int, withAlpha bool) string {
 	var img image.Image
 	if withAlpha {
 		rgba := image.NewRGBA(image.Rect(0, 0, w, h))
-		for y := 0; y < h; y++ {
-			for x := 0; x < w; x++ {
+		for y := range h {
+			for x := range w {
 				a := uint8((x + y) % 256)
 				rgba.Set(x, y, color.NRGBA{R: 10, G: 20, B: 200, A: a})
 			}
@@ -116,8 +116,8 @@ func writeTempPNG(t *testing.T, dir string, w, h int, withAlpha bool) string {
 		img = rgba
 	} else {
 		rgb := image.NewNRGBA(image.Rect(0, 0, w, h))
-		for y := 0; y < h; y++ {
-			for x := 0; x < w; x++ {
+		for y := range h {
+			for x := range w {
 				rgb.Set(x, y, color.NRGBA{R: 200, G: 30, B: 10, A: 255})
 			}
 		}
@@ -303,7 +303,7 @@ func TestNotPDFHeaderPath(t *testing.T) {
 
 func TestInternalName_UniquenessPattern(t *testing.T) {
 	var buf bytes.Buffer
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		img := &Imagefile{id: i + 1}
 		buf.WriteString(img.InternalName())
 	}
@@ -456,8 +456,8 @@ func TestFinishPDF_ImportsObjectsAndWritesBytes(t *testing.T) {
 func TestFinishBitmap_JPEG_WritesImageXObject(t *testing.T) {
 	// Prepare a tiny JPEG in memory.
 	img := image.NewGray(image.Rect(0, 0, 3, 2))
-	for y := 0; y < 2; y++ {
-		for x := 0; x < 3; x++ {
+	for y := range 2 {
+		for x := range 3 {
 			img.SetGray(x, y, color.Gray{Y: uint8(x + y)})
 		}
 	}
@@ -508,8 +508,8 @@ func TestFinishBitmap_JPEG_WritesImageXObject(t *testing.T) {
 func TestFinishBitmap_PNG_WritesFlateImageXObject(t *testing.T) {
 	// Create a simple PNG (with alpha just to exercise SMask-paths if your parsePNG sets them).
 	rgba := image.NewRGBA(image.Rect(0, 0, 4, 3))
-	for y := 0; y < 3; y++ {
-		for x := 0; x < 4; x++ {
+	for y := range 3 {
+		for x := range 4 {
 			a := uint8(255)
 			if (x+y)%2 == 0 {
 				a = 200

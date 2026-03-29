@@ -89,7 +89,7 @@ func (imgf *Imagefile) parsePNG() error {
 		return errors.New("Not a PNG file")
 	}
 
-	imgf.r.Seek(4, io.SeekCurrent) //skip header chunk
+	imgf.r.Seek(4, io.SeekCurrent) // skip header chunk
 	b, err = readBytes(imgf.r, 4)
 	if err != nil {
 		return err
@@ -193,11 +193,12 @@ func (imgf *Imagefile) parsePNG() error {
 				return err
 			}
 
-			if ct == colGrayScale {
+			switch ct {
+			case colGrayScale:
 				trns = []byte{(t[1])}
-			} else if ct == colTrueColor {
+			case colTrueColor:
 				trns = []byte{t[1], t[3], t[5]}
-			} else {
+			default:
 				pos := strings.Index(string(t), "\x00")
 				if pos >= 0 {
 					trns = []byte{byte(pos)}
@@ -232,7 +233,7 @@ func (imgf *Imagefile) parsePNG() error {
 		if n <= 0 {
 			break
 		}
-	} //end for
+	} // end for
 
 	imgf.trns = trns
 	imgf.pal = pal
@@ -259,7 +260,6 @@ func (imgf *Imagefile) parsePNG() error {
 
 	if bpc != 8 {
 		imgf.decodeParms["BitsPerComponent"] = imgf.bitsPerComponent
-
 	}
 
 	if ct < colGrayScaleWithAlpha {
@@ -332,7 +332,6 @@ func compress(data []byte) ([]byte, error) {
 	var results []byte
 	var buff bytes.Buffer
 	zwr, err := zlib.NewWriterLevel(&buff, zlib.BestSpeed)
-
 	if err != nil {
 		return results, err
 	}

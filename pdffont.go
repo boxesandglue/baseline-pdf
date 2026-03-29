@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -233,7 +234,7 @@ func (face *Face) CompactSubset() error {
 func subsetTag(glyphs []ot.GlyphID, variations map[string]float64) string {
 	sorted := make([]ot.GlyphID, len(glyphs))
 	copy(sorted, glyphs)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 
 	data := make([]byte, len(sorted)*2)
 	for i, g := range sorted {
@@ -249,13 +250,13 @@ func subsetTag(glyphs []ot.GlyphID, variations map[string]float64) string {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			data = append(data, []byte(fmt.Sprintf("%s:%.2f", k, variations[k]))...)
+			data = append(data, fmt.Appendf(nil, "%s:%.2f", k, variations[k])...)
 		}
 	}
 
 	sum := md5.Sum(data)
 	ret := make([]rune, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		ret[i] = rune(sum[2*i]+sum[2*i+1])%26 + 'A'
 	}
 	return string(ret)
@@ -325,7 +326,7 @@ func widthsPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.
 	// Sort glyphs for consistent output
 	sorted := make([]ot.GlyphID, len(newGlyphs))
 	copy(sorted, newGlyphs)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	slices.Sort(sorted)
 
 	var b strings.Builder
 	b.WriteString("[")

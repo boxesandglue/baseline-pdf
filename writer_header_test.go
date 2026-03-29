@@ -20,10 +20,3 @@ func TestNewPDFWriterWritesHeader(t *testing.T) {
 		t.Fatalf("output does not look like a PDF:\n%s", string(out[:min(200, len(out))]))
 	}
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

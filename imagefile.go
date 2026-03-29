@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"maps"
 	"os"
 
 	// Packages image/jpeg and image/png are not used explicitly in the code below,
@@ -54,9 +55,21 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 	if err != nil {
 		return nil, err
 	}
+	imgf, err := pw.LoadImageFromReader(r, box, pagenumber)
+	if err != nil {
+		return nil, err
+	}
+	imgf.Filename = filename
+	return imgf, nil
+}
+
+// LoadImageFromReader loads an image from the given reader with the given box
+// and page number. If box is empty, it defaults to /MediaBox. The caller is
+// responsible for closing the reader if needed.
+func (pw *PDF) LoadImageFromReader(r io.ReadSeeker, box string, pagenumber int) (*Imagefile, error) {
 	imgCfg, format, err := image.DecodeConfig(r)
 	if errors.Is(err, image.ErrFormat) {
-		return tryParsePDFWithBox(pw, r, filename, box, pagenumber)
+		return tryParsePDFWithBox(pw, r, "", box, pagenumber)
 	}
 	if err != nil {
 		return nil, err
@@ -66,7 +79,6 @@ func (pw *PDF) LoadImageFileWithBox(filename string, box string, pagenumber int)
 		return nil, err
 	}
 	imgf := &Imagefile{
-		Filename:      filename,
 		Format:        format,
 		id:            nextID(),
 		pw:            pw,
@@ -204,9 +216,7 @@ func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, p
 // PDF boxes (crop, trim,...) should not be larger than the mediabox.
 func intersectBox(bx map[string]float64, mediabox map[string]float64) map[string]float64 {
 	newbox := make(map[string]float64)
-	for k, v := range bx {
-		newbox[k] = v
-	}
+	maps.Copy(newbox, bx)
 
 	if bx["lly"] < mediabox["lly"] {
 		newbox["lly"] = mediabox["lly"]

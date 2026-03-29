@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -206,7 +207,6 @@ func (pw *PDF) Println(s string) error {
 
 // Printf writes the formatted string to the PDF file.
 func (pw *PDF) Printf(format string, a ...any) error {
-
 	if err := pw.ensureHeader(); err != nil {
 		return err
 	}
@@ -392,9 +392,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 				"A":       annot.Action,
 				"Rect":    fmt.Sprintf("[%s %s %s %s]", FloatToPoint(annot.Rect[0]), FloatToPoint(annot.Rect[1]), FloatToPoint(annot.Rect[2]), FloatToPoint(annot.Rect[3])),
 			}
-			for k, v := range annot.Dictionary {
-				annotDict[k] = v
-			}
+			maps.Copy(annotDict, annot.Dictionary)
 
 			annotObj.Dict(annotDict)
 			if err := annotObj.Save(); err != nil {
@@ -405,9 +403,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		if len(annotationObjectNumbers) > 0 {
 			pageHash["Annots"] = "[" + strings.Join(annotationObjectNumbers, " ") + "]"
 		}
-		for k, v := range page.Dict {
-			pageHash[k] = v
-		}
+		maps.Copy(pageHash, page.Dict)
 		obj.Dict(pageHash)
 		obj.Save()
 	}
@@ -506,9 +502,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	if len(pw.names) > 0 {
 		dictCatalog["Names"] = pw.names
 	}
-	for k, v := range pw.Catalog {
-		dictCatalog[k] = v
-	}
+	maps.Copy(dictCatalog, pw.Catalog)
 	catalog.Dict(dictCatalog)
 	if err = catalog.Save(); err != nil {
 		return 0, err
@@ -543,7 +537,6 @@ func (pw *PDF) writeDestObj(page Objectnumber, x, y float64) (Objectnumber, erro
 		return 0, err
 	}
 	return obj.ObjectNumber, nil
-
 }
 
 func (pw *PDF) writeOutline(parentObj *Object, outlines []*Outline) (first Objectnumber, last Objectnumber, c int, err error) {
