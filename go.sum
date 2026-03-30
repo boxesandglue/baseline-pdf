@@ -1,4 +1,4 @@
 github.com/boxesandglue/gofpdi v1.0.22 h1:38quiYbMn/xBPK6K0D1aTCzDcVUAKoBHyu+PVvb8lWs=
 github.com/boxesandglue/gofpdi v1.0.22/go.mod h1:4wg4byd8re5WDzpSp9F4ODu5UjbeBc0sXXx15HTK4OI=
-github.com/boxesandglue/textshape v0.0.9 h1:R+C5w9ZH9A2c9f3y1gJ3O6XYzqXpHh4ozGwQgDBzrdw=
-github.com/boxesandglue/textshape v0.0.9/go.mod h1:DdRw4tpKs6xFaulvBfut/ICZGXgZeibMhoLrQycmVh8=
+github.com/boxesandglue/textshape v0.0.10 h1:Z0mRQ6MoNZPkyYIpjyF9sfxvdr2wdmRRPsoujvno6Ng=
+github.com/boxesandglue/textshape v0.0.10/go.mod h1:DdRw4tpKs6xFaulvBfut/ICZGXgZeibMhoLrQycmVh8=
