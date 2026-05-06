@@ -29,22 +29,54 @@ type Imagefile struct {
 	imageobject      *Object
 	decodeParms      Dict
 	decodeParmsSmask Dict
-	Format           string
-	Filename         string
-	Box              string
-	colorspace       string
-	bitsPerComponent string
-	trns             []byte
-	smask            []byte
-	pal              []byte
-	data             []byte
-	NumberOfPages    int
-	ScaleX           float64
-	ScaleY           float64
-	W                int
-	H                int
-	PageNumber       int // The requested page number for PDF images (1-based)
-	id               int
+	// pendingDictEntries are extra Form XObject dictionary entries to apply
+	// at finishPDF time (PutFormXobjects). Currently used for /StructParent
+	// when the Imagefile participates in a tagged PDF as an atomic Figure
+	// content (PDF/UA-1 §7.1 Note 1).
+	pendingDictEntries map[string]string
+	Format             string
+	Filename           string
+	Box                string
+	colorspace         string
+	bitsPerComponent   string
+	trns               []byte
+	smask              []byte
+	pal                []byte
+	data               []byte
+	NumberOfPages      int
+	ScaleX             float64
+	ScaleY             float64
+	W                  int
+	H                  int
+	PageNumber         int // The requested page number for PDF images (1-based)
+	id                 int
+}
+
+// ImageObject returns the *Object that represents this Imagefile's
+// XObject in the PDF, allocating it lazily on first call. Imagefile
+// otherwise allocates it lazily via the SetObjIDGetter closure during
+// PutFormXobjects, which is too late for callers that need the
+// ObjectNumber at page-shipout time (notably the PDF/UA structure
+// tagger that populates OBJR /Obj <ref>). This getter ensures the
+// object exists; the closure recognises a pre-allocated object and
+// returns its number on its first invocation.
+func (imgf *Imagefile) ImageObject() *Object {
+	if imgf.imageobject == nil {
+		imgf.imageobject = imgf.pw.NewObject()
+	}
+	return imgf.imageobject
+}
+
+// SetStructParent stages a /StructParent entry for this image's Form
+// XObject. The integer index is a key into the document's StructTreeRoot
+// ParentTree that maps to the structure element this image belongs to
+// (PDF/UA-1 §7.1 Note 1). With /StructParent set, the parent page does
+// not need an enclosing marked-content sequence around the /Do call.
+func (imgf *Imagefile) SetStructParent(idx int) {
+	if imgf.pendingDictEntries == nil {
+		imgf.pendingDictEntries = make(map[string]string)
+	}
+	imgf.pendingDictEntries["StructParent"] = fmt.Sprintf("%d", idx)
 }
 
 // LoadImageFileWithBox loads an image from the disc with the given box and page
@@ -182,9 +214,22 @@ func tryParsePDFWithBox(pw *PDF, r io.ReadSeeker, filename string, box string, p
 
 	imgf.pdfimporter = gofpdi.NewImporter()
 
+	// gofpdi calls this closure for every new object number it needs.
+	// The first invocation maps to the Form XObject; subsequent ones to
+	// the imported page's referenced objects (fonts, gstates, …). If
+	// `imgf.ImageObject()` was called before shipout (e.g. by the PDF/UA
+	// tagger that needs the XObject's ObjectNumber for an OBJR entry),
+	// `imageobject` is already set — that pre-allocated object is
+	// returned on the first call instead of creating a fresh one.
+	preAllocConsumed := false
 	f := func() int {
+		if imgf.imageobject != nil && !preAllocConsumed {
+			preAllocConsumed = true
+			return int(imgf.imageobject.ObjectNumber)
+		}
 		if imgf.imageobject == nil {
 			imgf.imageobject = pw.NewObject()
+			preAllocConsumed = true
 			return int(imgf.imageobject.ObjectNumber)
 		}
 		return int(pw.NewObject().ObjectNumber)
@@ -299,9 +344,17 @@ func (imgf *Imagefile) InternalName() string {
 }
 
 func finishPDF(imgf *Imagefile) error {
-	_, err := imgf.pdfimporter.ImportPage(imgf.PageNumber, imgf.Box)
+	tplN, err := imgf.pdfimporter.ImportPage(imgf.PageNumber, imgf.Box)
 	if err != nil {
 		return err
+	}
+
+	// Apply any extra Form-XObject dictionary entries staged by the host
+	// pipeline (e.g. /StructParent for tagged PDFs). Must happen between
+	// ImportPage (which assigns the template index we need) and
+	// PutFormXobjects (which writes the dictionary).
+	for k, v := range imgf.pendingDictEntries {
+		imgf.pdfimporter.SetTemplateDictEntry(tplN, k, v)
 	}
 
 	_, err = imgf.pdfimporter.PutFormXobjects()
