@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
 
 	// Packages image/jpeg and image/png are not used explicitly in the code below,
 	// but are imported for their initialization side-effect, which allows
@@ -363,10 +364,14 @@ func finishPDF(imgf *Imagefile) error {
 	}
 
 	imported := imgf.pdfimporter.GetImportedObjects()
-	for i, v := range imported {
+	// Sort by source object number so Save() writes to the output PDF
+	// in a stable order; otherwise the xref offsets (and hence the
+	// trailer /ID md5) drift between runs.
+	keys := slices.Sorted(maps.Keys(imported))
+	for _, i := range keys {
 		o := imgf.pw.NewObjectWithNumber(Objectnumber(i))
 		o.Raw = true
-		o.Data = bytes.NewBuffer(v)
+		o.Data = bytes.NewBuffer(imported[i])
 		o.Save()
 	}
 	return nil

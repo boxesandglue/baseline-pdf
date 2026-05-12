@@ -203,11 +203,15 @@ func (face *Face) CompactSubset() error {
 		return nil // already prepared
 	}
 
-	// Collect glyphs to subset (old GIDs)
+	// Collect glyphs to subset (old GIDs). Sort so the resulting
+	// subset plan (and hence the new GID assignments in glyphMap) is
+	// reproducible across runs — Go map iteration is intentionally
+	// randomised.
 	oldGlyphs := make([]ot.GlyphID, 0, len(face.usedChar))
 	for g := range face.usedChar {
 		oldGlyphs = append(oldGlyphs, ot.GlyphID(g))
 	}
+	slices.Sort(oldGlyphs)
 
 	// Create subset input
 	input := subset.NewInput()
@@ -409,11 +413,13 @@ func (face *Face) finish() error {
 	pdfwriter := face.pw
 	Logger.Info("Write font to PDF", "filename", face.Filename, "psname", face.PostscriptName)
 
-	// Collect glyphs to subset (old GIDs)
+	// Collect glyphs to subset (old GIDs). Sort so subset.CreatePlan
+	// sees the same order across runs; Go map iteration is randomised.
 	oldGlyphs := make([]ot.GlyphID, 0, len(face.usedChar))
 	for g := range face.usedChar {
 		oldGlyphs = append(oldGlyphs, ot.GlyphID(g))
 	}
+	slices.Sort(oldGlyphs)
 
 	// Check if CompactSubset was called
 	// If not, use FlagRetainGIDs so old GIDs in content streams still work
@@ -429,15 +435,22 @@ func (face *Face) finish() error {
 		input.AddGlyph(gid)
 	}
 
-	// Apply variation settings for instancing (creates static font from variable)
+	// Apply variation settings for instancing (creates static font from variable).
+	// Pin axes in sorted-tag order so the resulting instance is byte-stable.
 	if len(face.VariationSettings) > 0 {
 		Logger.Debug("Applying variation settings for instancing", "variations", face.VariationSettings)
 	}
-	for tag, value := range face.VariationSettings {
+	variationKeys := make([]string, 0, len(face.VariationSettings))
+	for tag := range face.VariationSettings {
+		variationKeys = append(variationKeys, tag)
+	}
+	sort.Strings(variationKeys)
+	for _, tag := range variationKeys {
+		value := face.VariationSettings[tag]
 		input.PinAxisLocation(ot.MakeTag(tag[0], tag[1], tag[2], tag[3]), float32(value))
 	}
 
-	// Subset the font
+	// Subset the font.
 	plan, err := subset.CreatePlan(face.face.Font, input)
 	if err != nil {
 		return err
@@ -452,13 +465,19 @@ func (face *Face) finish() error {
 	var reverseMap map[ot.GlyphID]ot.GlyphID
 
 	if useCompactMapping {
-		// Use the pre-computed glyph map from CompactSubset
+		// Use the pre-computed glyph map from CompactSubset. Sort the
+		// new-GID slice so the downstream PDF tables (widthsPDF —
+		// already re-sorts but starts from this same slice — and
+		// cmapPDF — does NOT re-sort) emit their entries in a
+		// reproducible order. Go map iteration would otherwise scramble
+		// the ToUnicode CMap layout between runs.
 		newGlyphs = make([]ot.GlyphID, 0, len(face.glyphMap))
 		reverseMap = make(map[ot.GlyphID]ot.GlyphID)
 		for oldGID, newGID := range face.glyphMap {
 			newGlyphs = append(newGlyphs, newGID)
 			reverseMap[newGID] = oldGID
 		}
+		slices.Sort(newGlyphs)
 	} else {
 		// With FlagRetainGIDs, old GID == new GID (identity mapping)
 		newGlyphs = oldGlyphs
