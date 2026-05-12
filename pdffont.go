@@ -510,11 +510,19 @@ func (face *Face) finish() error {
 		// For TrueType fonts, PDF needs the full SFNT file
 		fontstream.Data.Write(subsetData)
 	}
+	// PDF 1.7 §9.9 (Table 127): Length1 is the uncompressed length of
+	// the embedded font program. It is only specified for /FontFile
+	// (Type 1) and /FontFile2 (TrueType). /FontFile3 (CFF) omits it
+	// in favour of /Subtype. Set it explicitly here — Save() does not
+	// guess at stream semantics.
+	uncompressedLen := fontstream.Data.Len()
 	fontstream.SetCompression(9)
 
 	fontstream.Dictionary = Dict{}
 	if isCFF {
 		fontstream.Dictionary["/Subtype"] = "/CIDFontType0C"
+	} else {
+		fontstream.Dictionary["Length1"] = strconv.Itoa(uncompressedLen)
 	}
 	if err = fontstream.Save(); err != nil {
 		return err

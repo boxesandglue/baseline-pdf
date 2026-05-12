@@ -274,7 +274,6 @@ func (obj *Object) Save() error {
 			}
 			obj.pdfwriter.zlibWriter.Close()
 			obj.Dictionary["Length"] = strconv.Itoa(b.Len())
-			obj.Dictionary["Length1"] = strconv.Itoa(obj.Data.Len())
 			obj.Data = &b
 		} else {
 			obj.Dictionary["Length"] = strconv.Itoa(obj.Data.Len())
