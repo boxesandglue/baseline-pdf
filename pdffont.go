@@ -27,6 +27,7 @@ func nextID() int {
 type Face struct {
 	Shaper            *ot.Shaper
 	usedChar          map[int]bool
+	glyphComponents   map[int]string // old GID -> source runes (for ToUnicode of ligatures)
 	fontobject        *Object
 	pw                *PDF
 	face              *ot.Face
@@ -67,6 +68,19 @@ func (face *Face) RegisterCodepoint(codepoint int) {
 	face.usedChar[codepoint] = true
 }
 
+// RegisterGlyph marks the glyph as used on the page and records the source
+// runes the glyph came from. The components string allows the ToUnicode CMap
+// to recover the original text for glyphs without a direct cmap entry (typical
+// for OpenType ligatures like fi/fl), so copy-paste yields the original
+// characters instead of U+FFFD.
+func (face *Face) RegisterGlyph(glyphID int, components string) {
+	face.usedChar[0] = true
+	face.usedChar[glyphID] = true
+	if components != "" {
+		face.glyphComponents[glyphID] = components
+	}
+}
+
 func fillFaceObject(otFace *ot.Face) (*Face, error) {
 	shaper, err := ot.NewShaper(otFace.Font)
 	if err != nil {
@@ -74,13 +88,14 @@ func fillFaceObject(otFace *ot.Face) (*Face, error) {
 	}
 
 	face := Face{
-		FaceID:         nextID(),
-		UnitsPerEM:     int32(otFace.Upem()),
-		Shaper:         shaper,
-		PostscriptName: otFace.PostscriptName(),
-		usedChar:       make(map[int]bool),
-		Scale:          1.0,
-		face:           otFace,
+		FaceID:          nextID(),
+		UnitsPerEM:      int32(otFace.Upem()),
+		Shaper:          shaper,
+		PostscriptName:  otFace.PostscriptName(),
+		usedChar:        make(map[int]bool),
+		glyphComponents: make(map[int]string),
+		Scale:           1.0,
+		face:            otFace,
 	}
 
 	return &face, nil
@@ -356,7 +371,10 @@ func widthsPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.
 // cmapPDF returns PDF ToUnicode CMap for glyphs.
 // newGlyphs contains the new (post-subset) glyph IDs.
 // reverseMap maps new GID -> old GID for looking up Unicode in the original font.
-func cmapPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.GlyphID) string {
+// components maps old GID -> source runes recorded at shape time, used to
+// recover the original text for glyphs without a direct cmap entry (e.g.
+// fi/fl ligatures produced by OpenType substitution).
+func cmapPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.GlyphID, components map[int]string) string {
 	if len(newGlyphs) == 0 {
 		return ""
 	}
@@ -392,19 +410,40 @@ begincmap
 	b.WriteString(" beginbfchar\n")
 	for _, newGID := range newGlyphs {
 		oldGID := reverseMap[newGID]
-		r := glyphToUnicode[oldGID]
-		if r == 0 {
-			r = 0xFFFD
-		}
 		b.WriteByte('<')
 		writeHex4Upper(&b, uint16(newGID))
 		b.WriteString("><")
-		writeHex4Upper(&b, uint16(r))
+		if src, ok := components[int(oldGID)]; ok && src != "" {
+			// Components recorded at shape time — emit the full UTF-16BE
+			// sequence so ligatures and multi-rune clusters round-trip.
+			writeUTF16BEHex(&b, src)
+		} else if r := glyphToUnicode[oldGID]; r != 0 {
+			writeUTF16BEHex(&b, string(r))
+		} else {
+			writeHex4Upper(&b, 0xFFFD)
+		}
 		b.WriteString(">\n")
 	}
 	b.WriteString(`endbfchar
 endcmap CMapName currentdict /CMap defineresource pop end end`)
 	return b.String()
+}
+
+// writeUTF16BEHex appends the UTF-16BE hex encoding of s to b. Runes outside
+// the BMP are emitted as surrogate pairs. The PDF ToUnicode bfchar entry
+// expects this encoding for multi-codepoint mappings (PDF 1.7 §9.10.3).
+func writeUTF16BEHex(b *strings.Builder, s string) {
+	for _, r := range s {
+		if r <= 0xFFFF {
+			writeHex4Upper(b, uint16(r))
+		} else {
+			r -= 0x10000
+			hi := uint16(0xD800 + (r >> 10))
+			lo := uint16(0xDC00 + (r & 0x3FF))
+			writeHex4Upper(b, hi)
+			writeHex4Upper(b, lo)
+		}
+	}
 }
 
 // finish writes the font file to the PDF.
@@ -552,7 +591,7 @@ func (face *Face) finish() error {
 	fdd := fontDescriptorObj.Dict(fontDescriptor)
 	fdd.Save()
 
-	cmapStr := cmapPDF(f, newGlyphs, reverseMap)
+	cmapStr := cmapPDF(f, newGlyphs, reverseMap, face.glyphComponents)
 	cmapObj := pdfwriter.NewObject()
 	cmapObj.Data.WriteString(cmapStr)
 	if err = cmapObj.Save(); err != nil {
