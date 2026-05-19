@@ -134,8 +134,7 @@ type PDF struct {
 	DefaultOffsetY    float64
 	DefaultPageWidth  float64
 	DefaultPageHeight float64
-	Major             uint
-	Minor             uint
+	version           Version
 	NoPages           int // set when PDF is finished
 	lastEOL           int64
 	nextobject        Objectnumber
@@ -147,8 +146,7 @@ type PDF struct {
 // object numbering at 1 (object 0 is the free head entry).
 func NewPDFWriter(file io.Writer) *PDF {
 	pw := PDF{
-		Major:            1,
-		Minor:            7,
+		version:          Version17,
 		NameDestinations: make(map[String]*NameDest),
 		objectlocations:  make(map[Objectnumber]int64),
 		zlibWriter:       zlib.NewWriter(io.Discard),
@@ -162,6 +160,13 @@ func NewPDFWriter(file io.Writer) *PDF {
 	return &pw
 }
 
+// SetVersion overrides the default PDF version. Intended for callers that
+// express version intent via a higher-level concept (e.g. Format in
+// boxesandglue). Must be called before the first byte is written.
+func (pw *PDF) SetVersion(v Version) {
+	pw.version = v
+}
+
 // GetCatalogNameTreeDict returns the Dict for the specified name. If it does
 // not exist, it is created.
 func (pw *PDF) GetCatalogNameTreeDict(dict Name) Dict {
@@ -172,7 +177,7 @@ func (pw *PDF) GetCatalogNameTreeDict(dict Name) Dict {
 }
 
 func (pw *PDF) writePDFHead() error {
-	s := fmt.Sprintf("%%PDF-%d.%d\n%%\x80\x80\x80\x80", pw.Major, pw.Minor)
+	s := fmt.Sprintf("%%PDF-%s\n%%\x80\x80\x80\x80", pw.version)
 	n, err := fmt.Fprint(pw.outfile, s)
 	pw.pos += int64(n)
 	return err
@@ -265,7 +270,7 @@ func pdfDate(t time.Time) string {
 }
 
 func (pw *PDF) writeInfoDict() (*Object, error) {
-	if pw.Major < 2 {
+	if pw.version.hasInfoDict() {
 		info := pw.NewObject()
 		info.Dictionary = pw.InfoDict
 		if info.Dictionary == nil {
