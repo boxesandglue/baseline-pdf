@@ -137,6 +137,11 @@ func serializeLevel(item any, level int) string {
 	switch t := item.(type) {
 	case string:
 		return t
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
 	case Array:
 		return arrayToString(t)
 	case int:
