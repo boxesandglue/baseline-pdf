@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -145,6 +146,15 @@ type PDF struct {
 // version 1.7, prepares internal maps, a reusable zlib writer, and starts
 // object numbering at 1 (object 0 is the free head entry).
 func NewPDFWriter(file io.Writer) *PDF {
+	// Reset the package-global Face/Image ID counter so that a fresh PDF
+	// always starts at /F1, /F2, … regardless of any prior PDF rendered
+	// in the same process (e.g. glu's multi-pass aux-convergence loop,
+	// or test suites that build several PDFs in sequence). Without this
+	// the second pass got /F3, /F4 etc., making byte-identical reference
+	// PDFs flaky. Assumes sequential PDF construction within a process;
+	// `integerSequence` itself is already not safe against concurrent
+	// PDF writers.
+	atomic.StoreInt64(&integerSequence, 0)
 	pw := PDF{
 		version:          Version17,
 		NameDestinations: make(map[String]*NameDest),
