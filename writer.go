@@ -97,11 +97,17 @@ type Page struct {
 	Annotations   []Annotation
 	Faces         []*Face
 	Images        []*Imagefile
-	Objnum        Objectnumber // The "/Page" object
-	Width         float64
-	Height        float64
-	OffsetX       float64
-	OffsetY       float64
+	// Patterns maps a per-page-unique resource name (without the leading
+	// slash) to the indirect Pattern object returned by
+	// PDF.WriteShadingPattern. Entries land in /Resources/Pattern; the
+	// renderer (e.g. svgreader) refers to them as "/<name> scn" inside the
+	// content stream.
+	Patterns map[Name]*Object
+	Objnum   Objectnumber // The "/Page" object
+	Width    float64
+	Height   float64
+	OffsetX  float64
+	OffsetY  float64
 }
 
 // Outline represents PDF bookmarks. To create outlines, you need to assign
@@ -370,6 +376,16 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 				xo[Name(img.InternalName())] = img.imageobject.ObjectNumber.Ref()
 			}
 			resHash["XObject"] = xo
+		}
+		// Shading patterns produced by WriteShadingPattern. Pattern names
+		// are passed through verbatim; the SVG renderer reuses the same
+		// names in the page content stream.
+		if len(page.Patterns) > 0 {
+			pat := Dict{}
+			for name, obj := range page.Patterns {
+				pat[name] = obj.ObjectNumber.Ref()
+			}
+			resHash["Pattern"] = pat
 		}
 		pageHash := Dict{
 			"Type":     "/Page",
