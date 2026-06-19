@@ -1,4 +1,4 @@
-[![Go reference documentation](https://img.shields.io/badge/doc-go%20reference-73FA79)](https://pkg.go.dev/github.com/boxesandglue/baseline-pdf)&nbsp;[![Homepage](https://img.shields.io/badge/homepage-boxesandglue.dev-blue)](https://boxesandglue.dev)
+[![Go reference documentation](https://img.shields.io/badge/doc-go%20reference-73FA79)](https://pkg.go.dev/github.com/boxesandglue/baseline-pdf)&nbsp;[![Homepage](https://img.shields.io/badge/homepage-boxesandglue.dev-blue)](https://boxesandglue.dev)&nbsp;[![Explore in Constellation](https://img.shields.io/badge/Explore%20in-Constellation-blue)](https://constellation.speedata.de)
 
 
 ![baseline logo](https://user-images.githubusercontent.com/209434/228155279-35b5dcd2-e00d-442c-abae-3687e2721aa3.png)
@@ -19,6 +19,12 @@ New features in 1.1:
 # Status
 
 Not yet used in production. Expect API changes.
+
+# Ecosystem
+
+baseline-pdf is part of a broader ecosystem of PDF, typesetting and publishing technologies.
+
+**[Explore the constellation →](https://constellation.speedata.de)**
 
 # License
 
