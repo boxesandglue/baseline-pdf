@@ -5,6 +5,8 @@ go 1.23.0
 toolchain go1.24.0
 
 require (
-	github.com/boxesandglue/gofpdi v1.0.23
+	github.com/boxesandglue/gofpdi v1.0.24
 	github.com/boxesandglue/textshape v0.0.12
 )
+
+require github.com/speedata/pdfdisassembler v0.0.7 // indirect
