@@ -9,18 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"github.com/boxesandglue/textshape/ot"
 	"github.com/boxesandglue/textshape/subset"
 )
-
-var integerSequence int64
-
-// nextID generates a new unique face ID.
-func nextID() int {
-	return int(atomic.AddInt64(&integerSequence, 1))
-}
 
 // Face represents a font structure with no specific size. To get the dimensions
 // of a font, you need to create a Font object with a given size.
@@ -81,14 +73,14 @@ func (face *Face) RegisterGlyph(glyphID int, components string) {
 	}
 }
 
-func fillFaceObject(otFace *ot.Face) (*Face, error) {
+func fillFaceObject(otFace *ot.Face, pw *PDF) (*Face, error) {
 	shaper, err := ot.NewShaper(otFace.Font)
 	if err != nil {
 		return nil, err
 	}
 
 	face := Face{
-		FaceID:          nextID(),
+		FaceID:          pw.nextID(),
 		UnitsPerEM:      int32(otFace.Upem()),
 		Shaper:          shaper,
 		PostscriptName:  otFace.PostscriptName(),
@@ -111,7 +103,7 @@ func (pw *PDF) NewFaceFromData(data []byte, idx int) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := fillFaceObject(otFace)
+	f, err := fillFaceObject(otFace, pw)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +133,7 @@ func (pw *PDF) LoadFace(filename string, idx int) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := fillFaceObject(otFace)
+	f, err := fillFaceObject(otFace, pw)
 	if err != nil {
 		return nil, err
 	}

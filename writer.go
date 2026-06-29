@@ -146,21 +146,29 @@ type PDF struct {
 	lastEOL           int64
 	nextobject        Objectnumber
 	pos               int64
+	// idCounter backs nextID(); it is per-PDF so that nested PDF writers
+	// (e.g. an in-memory placeholder image built while the main document is
+	// being assembled) never disturb the host document's /F… and /ImgBag…
+	// numbering. Each PDF therefore deterministically numbers from 1.
+	idCounter int64
+}
+
+// nextID returns a fresh per-PDF sequence number used for the internal
+// resource names of fonts (/F1, /F2 …) and images (/ImgBag1, …). Keeping it
+// on the PDF (rather than a package global) guarantees uniqueness within a
+// single document and isolation between documents built in the same process.
+func (pw *PDF) nextID() int {
+	return int(atomic.AddInt64(&pw.idCounter, 1))
 }
 
 // NewPDFWriter initializes and returns a PDF writer targeting file. It sets PDF
 // version 1.7, prepares internal maps, a reusable zlib writer, and starts
 // object numbering at 1 (object 0 is the free head entry).
 func NewPDFWriter(file io.Writer) *PDF {
-	// Reset the package-global Face/Image ID counter so that a fresh PDF
-	// always starts at /F1, /F2, … regardless of any prior PDF rendered
-	// in the same process (e.g. glu's multi-pass aux-convergence loop,
-	// or test suites that build several PDFs in sequence). Without this
-	// the second pass got /F3, /F4 etc., making byte-identical reference
-	// PDFs flaky. Assumes sequential PDF construction within a process;
-	// `integerSequence` itself is already not safe against concurrent
-	// PDF writers.
-	atomic.StoreInt64(&integerSequence, 0)
+	// The per-PDF idCounter (zero value) makes a fresh PDF always start at
+	// /F1, /F2, … regardless of any prior or nested PDF rendered in the same
+	// process (e.g. glu's multi-pass aux-convergence loop, or an in-memory
+	// placeholder image generated while the main document is assembled).
 	pw := PDF{
 		version:          Version17,
 		NameDestinations: make(map[String]*NameDest),
