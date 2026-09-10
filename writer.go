@@ -103,6 +103,11 @@ type Page struct {
 	// renderer (e.g. svgreader) refers to them as "/<name> scn" inside the
 	// content stream.
 	Patterns map[Name]*Object
+	// ExtGStates maps a resource name (without the leading slash) to the
+	// indirect graphics state parameter dictionary returned by
+	// PDF.WriteExtGState. Entries land in /Resources/ExtGState; content
+	// streams activate them with "/<name> gs".
+	ExtGStates map[Name]*Object
 	Objnum   Objectnumber // The "/Page" object
 	Width    float64
 	Height   float64
@@ -151,6 +156,10 @@ type PDF struct {
 	// being assembled) never disturb the host document's /F… and /ImgBag…
 	// numbering. Each PDF therefore deterministically numbers from 1.
 	idCounter int64
+	// extGStates caches the indirect objects written by WriteExtGState,
+	// keyed by their content-derived ResourceName, so equal parameter sets
+	// are written only once per document. Lazily allocated.
+	extGStates map[Name]*Object
 }
 
 // nextID returns a fresh per-PDF sequence number used for the internal
@@ -394,6 +403,16 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 				pat[name] = obj.ObjectNumber.Ref()
 			}
 			resHash["Pattern"] = pat
+		}
+		// Graphics state parameter dictionaries written by WriteExtGState.
+		// Names are passed through verbatim; content streams activate them
+		// with "/<name> gs".
+		if len(page.ExtGStates) > 0 {
+			gsDict := Dict{}
+			for name, obj := range page.ExtGStates {
+				gsDict[name] = obj.ObjectNumber.Ref()
+			}
+			resHash["ExtGState"] = gsDict
 		}
 		pageHash := Dict{
 			"Type":     "/Page",
