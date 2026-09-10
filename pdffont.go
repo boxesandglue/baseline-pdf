@@ -68,7 +68,11 @@ func (face *Face) RegisterCodepoint(codepoint int) {
 func (face *Face) RegisterGlyph(glyphID int, components string) {
 	face.usedChar[0] = true
 	face.usedChar[glyphID] = true
-	if components != "" {
+	// Never record components for .notdef: every character the font lacks
+	// shapes to glyph 0, so a last-write-wins entry here would make the
+	// ToUnicode CMap extract all of them as whichever character was
+	// registered last. Without components, CID 0 maps to U+FFFD.
+	if components != "" && glyphID != 0 {
 		face.glyphComponents[glyphID] = components
 	}
 }
@@ -379,25 +383,20 @@ func cmapPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.Gl
 		glyphToUnicode = make(map[ot.GlyphID]rune)
 	}
 
-	// Find max new glyph ID
-	maxGlyph := ot.GlyphID(0)
-	for _, gid := range newGlyphs {
-		if gid > maxGlyph {
-			maxGlyph = gid
-		}
-	}
-
 	var b strings.Builder
+	// The codespacerange declares the code structure (2-byte codes), not the
+	// set of used codes, so declare the full Identity-H space. A range
+	// derived from the highest used CID excluded the always-present CID 0
+	// bfchar entry and would overflow uint16 for glyph ID 65535.
 	b.WriteString(`/CIDInit /ProcSet findresource begin
 12 dict begin
 begincmap
 /CIDSystemInfo << /Registry (Adobe)/Ordering (UCS)/Supplement 0>> def
 /CMapName /Adobe-Identity-UCS def /CMapType 2 def
 1 begincodespacerange
+<0000><FFFF>
+endcodespacerange
 `)
-	b.WriteString("<0001><")
-	writeHex4Upper(&b, uint16(maxGlyph+1))
-	b.WriteString(">\nendcodespacerange\n")
 	writeInt(&b, len(newGlyphs))
 	b.WriteString(" beginbfchar\n")
 	for _, newGID := range newGlyphs {
