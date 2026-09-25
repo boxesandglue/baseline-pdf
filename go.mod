@@ -6,7 +6,7 @@ toolchain go1.24.0
 
 require (
 	github.com/boxesandglue/gofpdi v1.0.24
-	github.com/boxesandglue/textshape v0.0.15
+	github.com/boxesandglue/textshape v0.0.16
 )
 
 require github.com/speedata/pdfdisassembler v0.0.7 // indirect
