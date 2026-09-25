@@ -326,11 +326,11 @@ func widthsPDF(f *ot.Face, newGlyphs []ot.GlyphID, reverseMap map[ot.GlyphID]ot.
 		return "[]"
 	}
 
-	// Scale: for CFF fonts the units are typically 1000, for TrueType we scale
-	scale := 1.0
-	if !f.IsCFF() {
-		scale = float64(f.Upem()) / 1000.0
-	}
+	// PDF widths are in 1/1000 of text space for every font format, so
+	// scale from the font's units per em. CFF fonts usually have 1000, but
+	// not always: a CFF font with 4000 units per em would otherwise advance
+	// four times too far.
+	scale := float64(f.Upem()) / 1000.0
 
 	getWd := func(newGID ot.GlyphID) string {
 		oldGID := reverseMap[newGID]
