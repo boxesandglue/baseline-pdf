@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"slices"
 	"sort"
@@ -292,7 +293,17 @@ func fontNamePDF(f *ot.Face, tag string) string {
 // bboxPDF returns the font bounding box as PDF string.
 func bboxPDF(f *ot.Face) string {
 	xMin, yMin, xMax, yMax := f.BBox()
-	return fmt.Sprintf("[%d %d %d %d]", xMin, yMin, xMax, yMax)
+	return fmt.Sprintf("[%d %d %d %d]", glyphSpace(f, xMin), glyphSpace(f, yMin), glyphSpace(f, xMax), glyphSpace(f, yMax))
+}
+
+// glyphSpace converts a value in font units to glyph space, 1/1000 of the em,
+// which the font descriptor's metrics are in (PDF 32000-1 §9.8.1).
+func glyphSpace(f *ot.Face, v int16) int {
+	upem := f.Upem()
+	if upem == 0 || upem == 1000 {
+		return int(v)
+	}
+	return int(math.Round(float64(v) * 1000 / float64(upem)))
 }
 
 // flagsPDF returns the PDF font flags.
@@ -558,19 +569,19 @@ func (face *Face) finish() error {
 		return err
 	}
 
-	// Font descriptor using raw metrics from ot.Face
+	// Font descriptor, its metrics in glyph space
 	f := face.face
 	fontDescriptor := Dict{
 		"Type":        "/FontDescriptor",
 		"FontName":    fontNamePDF(f, tag),
 		"FontBBox":    bboxPDF(f),
-		"Ascent":      strconv.Itoa(int(f.Ascender())),
-		"Descent":     strconv.Itoa(int(f.Descender())),
-		"CapHeight":   strconv.Itoa(int(f.CapHeight())),
+		"Ascent":      strconv.Itoa(glyphSpace(f, f.Ascender())),
+		"Descent":     strconv.Itoa(glyphSpace(f, f.Descender())),
+		"CapHeight":   strconv.Itoa(glyphSpace(f, f.CapHeight())),
 		"Flags":       strconv.Itoa(flagsPDF(f)),
 		"ItalicAngle": strconv.Itoa(int(f.ItalicAngle() >> 16)),
 		"StemV":       strconv.Itoa(stemVPDF(f)),
-		"XHeight":     strconv.Itoa(int(f.XHeight())),
+		"XHeight":     strconv.Itoa(glyphSpace(f, f.XHeight())),
 	}
 	if isCFF {
 		fontDescriptor["FontFile3"] = fontstream.ObjectNumber.Ref()
