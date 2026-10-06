@@ -108,11 +108,11 @@ type Page struct {
 	// PDF.WriteExtGState. Entries land in /Resources/ExtGState; content
 	// streams activate them with "/<name> gs".
 	ExtGStates map[Name]*Object
-	Objnum   Objectnumber // The "/Page" object
-	Width    float64
-	Height   float64
-	OffsetX  float64
-	OffsetY  float64
+	Objnum     Objectnumber // The "/Page" object
+	Width      float64
+	Height     float64
+	OffsetX    float64
+	OffsetY    float64
 }
 
 // Outline represents PDF bookmarks. To create outlines, you need to assign
