@@ -593,7 +593,17 @@ func (face *Face) finish() error {
 	fdd := fontDescriptorObj.Dict(fontDescriptor)
 	fdd.Save()
 
-	cmapStr := cmapPDF(f, newGlyphs, reverseMap, face.glyphComponents)
+	// The ToUnicode CMap lists only the glyphs the document used. The subset
+	// also holds the components of its composite glyphs (the dieresis of a
+	// precomposed "ä"), which never appear in a content stream: an entry for
+	// them would claim a mapping the text never had.
+	cmapGlyphs := make([]ot.GlyphID, 0, len(face.usedChar))
+	for _, newGID := range newGlyphs {
+		if face.usedChar[int(reverseMap[newGID])] {
+			cmapGlyphs = append(cmapGlyphs, newGID)
+		}
+	}
+	cmapStr := cmapPDF(f, cmapGlyphs, reverseMap, face.glyphComponents)
 	cmapObj := pdfwriter.NewObject()
 	cmapObj.Data.WriteString(cmapStr)
 	if err = cmapObj.Save(); err != nil {
