@@ -563,3 +563,24 @@ func TestFinishBitmap_PNG_WritesFlateImageXObject(t *testing.T) {
 		t.Fatalf("SMask bytes exist but dictionary lacks /SMask reference")
 	}
 }
+
+func TestImagefile_Accessors(t *testing.T) {
+	if n := (&Imagefile{}).BitsPerComponent(); n != 0 {
+		t.Errorf("BitsPerComponent() without bitmap = %d, want 0", n)
+	}
+	parse := func(img image.Image) *Imagefile {
+		imgf := &Imagefile{r: newReader(newPNGBytes(t, img))}
+		if err := imgf.parsePNG(); err != nil {
+			t.Fatalf("parsePNG: %v", err)
+		}
+		return imgf
+	}
+	rgba := image.NewNRGBA64(image.Rect(0, 0, 2, 2))
+	rgba.SetNRGBA64(0, 0, color.NRGBA64{A: 0x8000})
+	if imgf := parse(rgba); imgf.BitsPerComponent() != 16 || !imgf.HasSoftMask() {
+		t.Errorf("16-bit RGBA: BitsPerComponent()=%d HasSoftMask()=%v, want 16 true", imgf.BitsPerComponent(), imgf.HasSoftMask())
+	}
+	if imgf := parse(image.NewGray(image.Rect(0, 0, 2, 2))); imgf.BitsPerComponent() != 8 || imgf.HasSoftMask() {
+		t.Errorf("8-bit gray: BitsPerComponent()=%d HasSoftMask()=%v, want 8 false", imgf.BitsPerComponent(), imgf.HasSoftMask())
+	}
+}

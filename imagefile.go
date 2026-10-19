@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 
 	// Packages image/jpeg and image/png are not used explicitly in the code below,
 	// but are imported for their initialization side-effect, which allows
@@ -379,6 +380,20 @@ func finishPDF(imgf *Imagefile) error {
 
 func haveSMask(imginfo *Imagefile) bool {
 	return len(imginfo.smask) > 0
+}
+
+// BitsPerComponent returns the bits per color component a bitmap image is
+// written with, for example 8 or 16. It returns 0 for a PDF file.
+func (imgf *Imagefile) BitsPerComponent() int {
+	n, _ := strconv.Atoi(imgf.bitsPerComponent)
+	return n
+}
+
+// HasSoftMask reports whether a bitmap image is written with a soft mask
+// (/SMask), which is transparency: PDF/X-3 and PDF/A-1 don't allow it. A
+// color key (/Mask) is not a soft mask.
+func (imgf *Imagefile) HasSoftMask() bool {
+	return haveSMask(imgf)
 }
 
 func finishBitmap(imgf *Imagefile) error {
