@@ -1,3 +1,8 @@
 {
-  "expectError": "Interlacing not supported"
+  "width": 1,
+  "height": 1,
+  "colorspace": "Indexed",
+  "bitsPerComponent": "8",
+  "hasPalette": true,
+  "hasTRNS": false
 }

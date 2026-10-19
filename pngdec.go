@@ -155,9 +155,6 @@ func (imgf *Imagefile) parsePNG() error {
 	if err != nil {
 		return err
 	}
-	if interlacing != 0 {
-		return errors.New("Interlacing not supported")
-	}
 
 	_, err = imgf.r.Seek(4, io.SeekCurrent)
 	if err != nil {
@@ -166,6 +163,7 @@ func (imgf *Imagefile) parsePNG() error {
 
 	var pal []byte
 	var trns []int
+	var paletteAlpha []byte
 	var data []byte
 	for {
 		un, err := readUInt(imgf.r)
@@ -209,6 +207,7 @@ func (imgf *Imagefile) parsePNG() error {
 					int(binary.BigEndian.Uint16(t[4:])),
 				}
 			default:
+				paletteAlpha = t
 				pos := strings.Index(string(t), "\x00")
 				if pos >= 0 {
 					trns = []int{pos}
@@ -250,6 +249,10 @@ func (imgf *Imagefile) parsePNG() error {
 
 	if colspace == "Indexed" && strings.TrimSpace(string(pal)) == "" {
 		return errors.New("Missing palette")
+	}
+
+	if interlacing != 0 || colspace == "Indexed" && paletteNeedsDecoding(bpc, paletteAlpha) {
+		return imgf.decodePNG(ct, bpc, trns)
 	}
 
 	imgf.colorspace = colspace

@@ -300,15 +300,18 @@ func TestParsePNG_TestdataDirectory(t *testing.T) {
 				}
 			}
 
-			// Sanity: decodeParms must advertise PNG predictor & columns.
-			if v, ok := imgf.decodeParms["Predictor"]; !ok || v != 15 {
-				t.Errorf("decodeParms.Predictor=%v, want 15", v)
+			// Sanity: passed through, decodeParms must advertise PNG
+			// predictor & columns. Decoded images (decodePNG) have none.
+			if imgf.decodeParms != nil {
+				if v, ok := imgf.decodeParms["Predictor"]; !ok || v != 15 {
+					t.Errorf("decodeParms.Predictor=%v, want 15", v)
+				}
+				if v, ok := imgf.decodeParms["Columns"]; !ok || v != imgf.W {
+					t.Errorf("decodeParms.Columns=%v, want %d", v, imgf.W)
+				}
 			}
-			if v, ok := imgf.decodeParms["Columns"]; !ok || v != imgf.W {
-				t.Errorf("decodeParms.Columns=%v, want %d", v, imgf.W)
-			}
-			// For RGB images, Colors=3 should be set.
-			if imgf.colorspace == "DeviceRGB" {
+			// For RGB images passed through, Colors=3 should be set.
+			if imgf.colorspace == "DeviceRGB" && imgf.decodeParms != nil {
 				if v, ok := imgf.decodeParms["Colors"]; !ok || v != 3 {
 					t.Errorf("decodeParms.Colors=%v, want 3 (DeviceRGB)", v)
 				}
