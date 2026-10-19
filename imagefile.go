@@ -40,7 +40,7 @@ type Imagefile struct {
 	Box                string
 	colorspace         string
 	bitsPerComponent   string
-	trns               []byte
+	trns               []int
 	smask              []byte
 	pal                []byte
 	data               []byte
@@ -395,13 +395,9 @@ func finishBitmap(imgf *Imagefile) error {
 		d["Decode"] = "[1 0 1 0 1 0 1 0]"
 	}
 	if len(imgf.trns) > 0 {
-		j := 0
-		content := []byte{}
-		max := len(imgf.trns)
-		for j < max {
-			content = append(content, imgf.trns[j])
-			content = append(content, imgf.trns[j])
-			j++
+		content := Array{}
+		for _, v := range imgf.trns {
+			content = append(content, v, v)
 		}
 		d["Mask"] = content
 	}
