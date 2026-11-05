@@ -359,6 +359,8 @@ func finishPDF(imgf *Imagefile) error {
 		imgf.pdfimporter.SetTemplateDictEntry(tplN, k, v)
 	}
 
+	imgf.pdfimporter.SetDefaultRGB(int(imgf.pw.DefaultRGB))
+
 	_, err = imgf.pdfimporter.PutFormXobjects()
 	if err != nil {
 		return err
