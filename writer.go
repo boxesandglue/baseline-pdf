@@ -21,7 +21,7 @@ var (
 	// Logger is initialized to write to io.Discard and the default log level is
 	// math.MaxInt, so it should never write anything.
 	Logger          *slog.Logger
-	pdfNameReplacer = strings.NewReplacer("#20", " ", "/", "#2f", "#", "#23", "(", "#28", ")", "#29")
+	pdfNameReplacer = strings.NewReplacer(" ", "#20", "/", "#2f", "#", "#23", "(", "#28", ")", "#29")
 )
 
 func init() {
@@ -383,7 +383,7 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			colorspace := Dict{}
 
 			for _, cs := range pw.Colorspaces {
-				colorspace[Name(cs.ID)] = cs.Obj.String()
+				colorspace[Name(cs.ID)] = cs.Obj.Ref()
 			}
 			resHash["ColorSpace"] = colorspace
 		}
