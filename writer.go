@@ -141,6 +141,7 @@ type PDF struct {
 	// a new zlib writer for each stream
 	zlibWriter        *zlib.Writer
 	Colorspaces       []*Separation
+	DefaultRGB        Objectnumber // color space object for DeviceRGB on every page, 0 for none
 	Outlines          []*Outline
 	DefaultOffsetX    float64
 	DefaultOffsetY    float64
@@ -379,11 +380,14 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 			}
 			resHash["Font"] = fnts
 		}
-		if len(pw.Colorspaces) > 0 {
+		if len(pw.Colorspaces) > 0 || pw.DefaultRGB != 0 {
 			colorspace := Dict{}
 
 			for _, cs := range pw.Colorspaces {
 				colorspace[Name(cs.ID)] = cs.Obj.Ref()
+			}
+			if pw.DefaultRGB != 0 {
+				colorspace["DefaultRGB"] = pw.DefaultRGB.Ref()
 			}
 			resHash["ColorSpace"] = colorspace
 		}
