@@ -113,3 +113,56 @@ func TestExtGStateOverprint(t *testing.T) {
 		}
 	}
 }
+
+func softMaskForm(pw *PDF, group bool) *Form {
+	content := pw.NewObject()
+	content.Data.WriteString("0.5 g 0 0 1 1 re f")
+	form := pw.AddForm(content, [4]float64{0, 0, 1, 1})
+	if group {
+		form.Group = &TransparencyGroup{ColorSpace: "/DeviceGray"}
+	}
+	return form
+}
+
+// TestExtGStateSoftMask checks the dictionary and that the name tells masks
+// apart, as equal names share one object.
+func TestExtGStateSoftMask(t *testing.T) {
+	var buf bytes.Buffer
+	pw := NewPDFWriter(&buf)
+	form := softMaskForm(pw, true)
+	lum := ExtGState{SoftMask: &SoftMask{Group: form}}
+	alpha := ExtGState{SoftMask: &SoftMask{Group: form, Alpha: true}}
+	bc := ExtGState{SoftMask: &SoftMask{Group: form, Backdrop: []float64{0.5}}}
+	none := ExtGState{SoftMask: &SoftMask{}}
+	names := map[Name]bool{}
+	for _, gs := range []ExtGState{lum, alpha, bc, none, {}} {
+		names[gs.ResourceName()] = true
+		if _, err := pw.WriteExtGState(gs); err != nil {
+			t.Fatalf("WriteExtGState: %v", err)
+		}
+	}
+	if len(names) != 5 {
+		t.Errorf("resource names are not distinct: %v", names)
+	}
+	newTestPage(t, pw, "q Q")
+	out := finishToString(t, pw, &buf)
+	wantAll(t, out,
+		"/Type /Mask",
+		"/S /Luminosity",
+		"/S /Alpha",
+		"/G "+form.ObjectNumber().Ref(),
+		"/BC [0.5]",
+		"/SMask /None",
+		"/CS /DeviceGray",
+	)
+}
+
+// TestExtGStateSoftMaskNeedsGroup: a soft mask without a transparency group is
+// not valid PDF, so it must not reach the file.
+func TestExtGStateSoftMaskNeedsGroup(t *testing.T) {
+	pw := NewPDFWriter(&bytes.Buffer{})
+	form := softMaskForm(pw, false)
+	if _, err := pw.WriteExtGState(ExtGState{SoftMask: &SoftMask{Group: form}}); err == nil {
+		t.Error("expected an error for a form without a transparency group")
+	}
+}

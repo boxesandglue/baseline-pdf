@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 )
@@ -16,6 +17,49 @@ type ExtGState struct {
 	StrokeOverprint *bool // /OP, overprint for stroking operations
 	FillOverprint   *bool // /op, overprint for nonstroking (fill) operations
 	OverprintMode   *int  // /OPM, 1 leaves the plates of zero CMYK components alone
+
+	SoftMask *SoftMask // /SMask, see SoftMask
+}
+
+// SoftMask describes the /SMask entry of a graphics state (ISO 32000-2 section
+// 11.6.5.3): a form whose result varies the opacity of what is painted while
+// the graphics state is active. Without a Group the entry is /None, which ends
+// a soft mask.
+type SoftMask struct {
+	Group    *Form     // /G, a form with a transparency group
+	Alpha    bool      // /S, use the alpha of the group instead of its luminosity
+	Backdrop []float64 // /BC, for a luminosity mask, in the color space of the group
+}
+
+func (sm *SoftMask) resourceName() string {
+	if sm.Group == nil {
+		return "SMnone"
+	}
+	name := "SM" + strings.TrimPrefix(sm.Group.InternalName(), "/")
+	if sm.Alpha {
+		name += "A"
+	}
+	for _, v := range sm.Backdrop {
+		name += "BC" + fmtGSComponent(v)
+	}
+	return name
+}
+
+func (sm *SoftMask) value() (any, error) {
+	if sm.Group == nil {
+		return "/None", nil
+	}
+	if sm.Group.Group == nil {
+		return nil, errors.New("pdf: the form of a soft mask needs a transparency group")
+	}
+	d := Dict{"Type": "/Mask", "S": "/Luminosity", "G": sm.Group.ObjectNumber().Ref()}
+	if sm.Alpha {
+		d["S"] = "/Alpha"
+	}
+	if len(sm.Backdrop) > 0 {
+		d["BC"] = numberArray(sm.Backdrop)
+	}
+	return d, nil
 }
 
 // Graphics states to switch overprinting on and off. With mode 1 a CMYK color
@@ -70,6 +114,9 @@ func (gs ExtGState) ResourceName() Name {
 		sb.WriteString("OPM")
 		sb.WriteString(strconv.Itoa(*gs.OverprintMode))
 	}
+	if gs.SoftMask != nil {
+		sb.WriteString(gs.SoftMask.resourceName())
+	}
 	return Name(sb.String())
 }
 
@@ -100,6 +147,13 @@ func (pw *PDF) WriteExtGState(gs ExtGState) (*Object, error) {
 	}
 	if gs.OverprintMode != nil {
 		d["OPM"] = strconv.Itoa(*gs.OverprintMode)
+	}
+	if gs.SoftMask != nil {
+		smask, err := gs.SoftMask.value()
+		if err != nil {
+			return nil, err
+		}
+		d["SMask"] = smask
 	}
 	obj := pw.NewObject()
 	obj.Dictionary = d
