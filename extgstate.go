@@ -12,6 +12,23 @@ type ExtGState struct {
 	FillAlpha   *float64 // /ca, constant alpha for nonstroking (fill) operations
 	StrokeAlpha *float64 // /CA, constant alpha for stroking operations
 	BlendMode   string   // /BM blend mode name such as "Multiply"; empty omits the entry
+
+	StrokeOverprint *bool // /OP, overprint for stroking operations
+	FillOverprint   *bool // /op, overprint for nonstroking (fill) operations
+	OverprintMode   *int  // /OPM, 1 leaves the plates of zero CMYK components alone
+}
+
+// Graphics states to switch overprinting on and off. With mode 1 a CMYK color
+// prints only on the plates of its nonzero components: a 100% black prints on
+// the black plate and keeps the cyan, magenta and yellow below it. Separation
+// colors print on their own plate in either mode.
+var (
+	OverprintOn  = overprintState(true, 1)
+	OverprintOff = overprintState(false, 0)
+)
+
+func overprintState(on bool, mode int) ExtGState {
+	return ExtGState{StrokeOverprint: &on, FillOverprint: &on, OverprintMode: &mode}
 }
 
 // fmtGSComponent renders a float for use inside a PDF name. Dots are not
@@ -41,6 +58,18 @@ func (gs ExtGState) ResourceName() Name {
 		sb.WriteString("BM")
 		sb.WriteString(gs.BlendMode)
 	}
+	if gs.StrokeOverprint != nil {
+		sb.WriteString("OP")
+		sb.WriteString(strconv.FormatBool(*gs.StrokeOverprint))
+	}
+	if gs.FillOverprint != nil {
+		sb.WriteString("op")
+		sb.WriteString(strconv.FormatBool(*gs.FillOverprint))
+	}
+	if gs.OverprintMode != nil {
+		sb.WriteString("OPM")
+		sb.WriteString(strconv.Itoa(*gs.OverprintMode))
+	}
 	return Name(sb.String())
 }
 
@@ -62,6 +91,15 @@ func (pw *PDF) WriteExtGState(gs ExtGState) (*Object, error) {
 	}
 	if gs.BlendMode != "" {
 		d["BM"] = "/" + gs.BlendMode
+	}
+	if gs.StrokeOverprint != nil {
+		d["OP"] = strconv.FormatBool(*gs.StrokeOverprint)
+	}
+	if gs.FillOverprint != nil {
+		d["op"] = strconv.FormatBool(*gs.FillOverprint)
+	}
+	if gs.OverprintMode != nil {
+		d["OPM"] = strconv.Itoa(*gs.OverprintMode)
 	}
 	obj := pw.NewObject()
 	obj.Dictionary = d

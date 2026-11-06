@@ -82,3 +82,34 @@ func TestExtGStateSerialization(t *testing.T) {
 		}
 	}
 }
+
+// TestExtGStateOverprint checks that switching overprint off is written out
+// and not mistaken for an absent entry.
+func TestExtGStateOverprint(t *testing.T) {
+	if OverprintOn.ResourceName() == OverprintOff.ResourceName() {
+		t.Fatal("on and off need different names")
+	}
+	var buf bytes.Buffer
+	pw := NewPDFWriter(&buf)
+	on, err := pw.WriteExtGState(OverprintOn)
+	if err != nil {
+		t.Fatalf("WriteExtGState: %v", err)
+	}
+	off, err := pw.WriteExtGState(OverprintOff)
+	if err != nil {
+		t.Fatalf("WriteExtGState: %v", err)
+	}
+	for _, tc := range []struct {
+		obj  *Object
+		want Dict
+	}{
+		{on, Dict{"OP": "true", "op": "true", "OPM": "1"}},
+		{off, Dict{"OP": "false", "op": "false", "OPM": "0"}},
+	} {
+		for k, v := range tc.want {
+			if got := tc.obj.Dictionary[k]; got != v {
+				t.Errorf("/%s = %v, want %v", k, got, v)
+			}
+		}
+	}
+}
