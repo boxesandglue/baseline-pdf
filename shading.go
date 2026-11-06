@@ -66,6 +66,11 @@ func (pw *PDF) WriteShadingPattern(p ShadingPattern) (*Object, error) {
 	if cs == "" {
 		cs = "/DeviceRGB"
 	}
+	// A shading is no content stream, so the DefaultRGB of the resources does
+	// not reach it: PDF/A and PDF/X need the color space right here.
+	if cs == "/DeviceRGB" && pw.DefaultRGB != 0 {
+		cs = Name(pw.DefaultRGB.Ref())
+	}
 	extendStart := "false"
 	if p.Shading.Extend[0] {
 		extendStart = "true"

@@ -271,3 +271,34 @@ func TestFunctionColorsMustMatch(t *testing.T) {
 		}
 	}
 }
+
+// TestShadingUsesDefaultRGB: the DefaultRGB of the resources does not reach a
+// shading, so PDF/A and PDF/X need the color space in the shading itself.
+func TestShadingUsesDefaultRGB(t *testing.T) {
+	black := []float64{0, 0, 0}
+	f := Function{FunctionType: 2, Domain: [2]float64{0, 1}, C0: black, C1: black, N: 1}
+	testdata := []struct {
+		colorspace Name
+		want       string
+	}{
+		{"", "/ColorSpace 7 0 R"},
+		{"/DeviceRGB", "/ColorSpace 7 0 R"},
+		{"/DeviceGray", "/ColorSpace /DeviceGray"},
+	}
+	for _, td := range testdata {
+		var buf bytes.Buffer
+		pw := NewPDFWriter(&buf)
+		pw.DefaultRGB = 7
+		fn := f
+		if td.colorspace == "/DeviceGray" {
+			fn.C0, fn.C1 = []float64{0}, []float64{1}
+		}
+		_, err := pw.WriteShadingPattern(ShadingPattern{Shading: Shading{ShadingType: 2, ColorSpace: td.colorspace, Function: fn}})
+		if err != nil {
+			t.Fatalf("WriteShadingPattern: %v", err)
+		}
+		if !strings.Contains(buf.String(), td.want) {
+			t.Errorf("%q: output does not contain %q\n%s", td.colorspace, td.want, buf.String())
+		}
+	}
+}

@@ -130,7 +130,7 @@ type PDF struct {
 	// a new zlib writer for each stream
 	zlibWriter        *zlib.Writer
 	Colorspaces       []*Separation
-	DefaultRGB        Objectnumber // color space object for DeviceRGB on every page, 0 for none
+	DefaultRGB        Objectnumber // color space object for DeviceRGB on every page and in shadings, 0 for none
 	Outlines          []*Outline
 	DefaultOffsetX    float64
 	DefaultOffsetY    float64
