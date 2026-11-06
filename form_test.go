@@ -42,8 +42,8 @@ func TestFormOnPage(t *testing.T) {
 	form.Group = &TransparencyGroup{ColorSpace: "/DeviceCMYK", Isolated: true}
 	form.Dict = Dict{"StructParents": "3"}
 
-	page := newTestPage(t, pw, form.InternalName()+" Do")
-	page.Forms = append(page.Forms, form)
+	page := newTestPage(t, pw, "/Fm1 Do")
+	page.Forms = map[Name]*Form{"Fm1": form}
 	out := finishToString(t, pw, &buf)
 
 	wantAll(t, out,
@@ -55,7 +55,7 @@ func TestFormOnPage(t *testing.T) {
 		"/I true",
 		"/StructParents 3",
 		"/XObject <<",
-		form.InternalName()+" "+form.ObjectNumber().Ref(),
+		"/Fm1 "+form.ObjectNumber().Ref(),
 		"1 0 0 rg 0 0 10 10 re f",
 	)
 	if strings.Contains(out, "/K true") {
@@ -71,8 +71,8 @@ func TestFormWithoutGroup(t *testing.T) {
 	content := pw.NewObject()
 	content.Data.WriteString("q Q")
 	form := pw.AddForm(content, [4]float64{0, 0, 1, 1})
-	page := newTestPage(t, pw, form.InternalName()+" Do")
-	page.Forms = append(page.Forms, form)
+	page := newTestPage(t, pw, "/Fm1 Do")
+	page.Forms = map[Name]*Form{"Fm1": form}
 	out := finishToString(t, pw, &buf)
 
 	if strings.Contains(out, "/Group") {
@@ -111,7 +111,7 @@ func TestEmptyFormIsAStream(t *testing.T) {
 	pw := NewPDFWriter(&buf)
 	form := pw.AddForm(pw.NewObject(), [4]float64{0, 0, 1, 1})
 	page := newTestPage(t, pw, "q Q")
-	page.Forms = append(page.Forms, form)
+	page.Forms = map[Name]*Form{"Fm1": form}
 	out := finishToString(t, pw, &buf)
 
 	wantAll(t, out, "/Length 0", "stream\n\nendstream")
@@ -131,8 +131,8 @@ func TestFontOnlyInForm(t *testing.T) {
 	content.Data.WriteString("BT " + face.InternalName() + " 10 Tf (A) Tj ET")
 	form := pw.AddForm(content, [4]float64{0, 0, 100, 100})
 	form.Faces = []*Face{face}
-	page := newTestPage(t, pw, form.InternalName()+" Do")
-	page.Forms = append(page.Forms, form)
+	page := newTestPage(t, pw, "/Fm1 Do")
+	page.Forms = map[Name]*Form{"Fm1": form}
 	out := finishToString(t, pw, &buf)
 
 	wantAll(t, out, "/FontFile2", "/Font <<", face.InternalName()+" "+face.fontobject.ObjectNumber.Ref())

@@ -35,7 +35,7 @@ func (sm *SoftMask) resourceName() string {
 	if sm.Group == nil {
 		return "SMnone"
 	}
-	name := "SM" + strings.TrimPrefix(sm.Group.InternalName(), "/")
+	name := "SM" + strconv.Itoa(int(sm.Group.ObjectNumber()))
 	if sm.Alpha {
 		name += "A"
 	}

@@ -2,7 +2,6 @@ package pdf
 
 import (
 	"maps"
-	"strconv"
 	"strings"
 )
 
@@ -11,7 +10,11 @@ import (
 type Resources struct {
 	Faces  []*Face
 	Images []*Imagefile
-	Forms  []*Form
+	// Forms maps a resource name (without the leading slash) to a form from
+	// PDF.AddForm. The name is the host's choice, so that a renderer can
+	// write "/<name> Do" before the form exists. Entries land in
+	// /Resources/XObject.
+	Forms map[Name]*Form
 	// Patterns maps a per-page-unique resource name (without the leading
 	// slash) to the indirect Pattern object returned by
 	// PDF.WriteShadingPattern. Entries land in /Resources/Pattern; the
@@ -53,8 +56,8 @@ func (pw *PDF) resourceDict(r *Resources) Dict {
 		for _, img := range r.Images {
 			xo[Name(img.InternalName())] = img.imageobject.ObjectNumber.Ref()
 		}
-		for _, form := range r.Forms {
-			xo[Name(form.InternalName())] = form.content.ObjectNumber.Ref()
+		for name, form := range r.Forms {
+			xo[name] = form.content.ObjectNumber.Ref()
 		}
 		res["XObject"] = xo
 	}
@@ -119,23 +122,17 @@ type Form struct {
 	Group   *TransparencyGroup // nil for a form without a transparency group
 	content *Object
 	pw      *PDF
-	id      int
 }
 
 // AddForm makes a Form XObject from the content stream. Unlike AddPage it needs
 // the clipping rectangle of the form. The form is written when the PDF is
 // finished, so its resources can be set until then. Paint it by adding it to
-// the Forms of the page and writing "<InternalName> Do".
+// the Forms of the page and writing "/<name> Do".
 func (pw *PDF) AddForm(content *Object, bbox [4]float64) *Form {
 	content.ForceStream = true
-	form := &Form{BBox: bbox, content: content, pw: pw, id: pw.nextID()}
+	form := &Form{BBox: bbox, content: content, pw: pw}
 	pw.forms = append(pw.forms, form)
 	return form
-}
-
-// InternalName returns a PDF usable name such as /Fm1.
-func (f *Form) InternalName() string {
-	return "/Fm" + strconv.Itoa(f.id)
 }
 
 // ObjectNumber returns the object number of the form. A structure element needs
