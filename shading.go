@@ -10,7 +10,8 @@ import (
 // Two FunctionTypes are supported here:
 //
 //   - FunctionType 2 (exponential interpolation) — used for a two-stop linear
-//     gradient. C0/C1 are the RGB endpoints in 0..1 space; N=1 yields linear
+//     gradient. C0/C1 are the endpoints in 0..1 space with one value per
+//     component of the color space of the shading; N=1 yields linear
 //     interpolation, the only mode used for SVG.
 //
 //   - FunctionType 3 (stitching) — chains multiple Type 2 sub-functions for
@@ -20,9 +21,9 @@ type Function struct {
 	FunctionType int        // 2 or 3
 	Domain       [2]float64 // typically [0 1]
 	// FunctionType 2 fields
-	C0 [3]float64 // start RGB color (0..1)
-	C1 [3]float64 // end RGB color (0..1)
-	N  float64    // exponent; 1 for linear interpolation
+	C0 []float64 // start color (0..1)
+	C1 []float64 // end color (0..1)
+	N  float64   // exponent; 1 for linear interpolation
 	// FunctionType 3 fields
 	SubFunctions []Function   // each must be FunctionType 2
 	Bounds       []float64    // len = len(SubFunctions)-1
@@ -34,7 +35,7 @@ type Function struct {
 // out until there is a need.
 type Shading struct {
 	ShadingType int        // 2 = axial (linear)
-	ColorSpace  Name       // "/DeviceRGB"
+	ColorSpace  Name       // "/DeviceRGB" (default), "/DeviceGray", "/DeviceCMYK"
 	Coords      [4]float64 // x1 y1 x2 y2 in pattern space
 	Function    Function
 	Extend      [2]bool // [extendStart extendEnd]
@@ -111,16 +112,18 @@ func (pw *PDF) WriteShadingPattern(p ShadingPattern) (*Object, error) {
 func (pw *PDF) writeFunction(f Function) (*Object, error) {
 	switch f.FunctionType {
 	case 2:
+		if len(f.C0) == 0 || len(f.C0) != len(f.C1) {
+			return nil, fmt.Errorf("pdf: exponential function needs two colors with the same components (%d, %d)",
+				len(f.C0), len(f.C1))
+		}
 		obj := pw.NewObject()
 		obj.Dictionary = Dict{
 			"FunctionType": "2",
 			"Domain": fmt.Sprintf("[%s %s]",
 				fmtPDFFloat(f.Domain[0]), fmtPDFFloat(f.Domain[1])),
-			"C0": fmt.Sprintf("[%s %s %s]",
-				fmtPDFFloat(f.C0[0]), fmtPDFFloat(f.C0[1]), fmtPDFFloat(f.C0[2])),
-			"C1": fmt.Sprintf("[%s %s %s]",
-				fmtPDFFloat(f.C1[0]), fmtPDFFloat(f.C1[1]), fmtPDFFloat(f.C1[2])),
-			"N": fmtPDFFloat(f.N),
+			"C0": numberArray(f.C0),
+			"C1": numberArray(f.C1),
+			"N":  fmtPDFFloat(f.N),
 		}
 		if err := obj.Save(); err != nil {
 			return nil, err

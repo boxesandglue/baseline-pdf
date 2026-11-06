@@ -52,8 +52,8 @@ func TestWriteFunctionType2(t *testing.T) {
 	f := Function{
 		FunctionType: 2,
 		Domain:       [2]float64{0, 1},
-		C0:           [3]float64{1, 0, 0},
-		C1:           [3]float64{0, 0, 1},
+		C0:           []float64{1, 0, 0},
+		C1:           []float64{0, 0, 1},
 		N:            1,
 	}
 	obj, err := pw.writeFunction(f)
@@ -86,8 +86,8 @@ func TestWriteFunctionType3Stitching(t *testing.T) {
 		FunctionType: 3,
 		Domain:       [2]float64{0, 1},
 		SubFunctions: []Function{
-			{FunctionType: 2, Domain: [2]float64{0, 1}, C0: [3]float64{1, 0, 0}, C1: [3]float64{0, 1, 0}, N: 1},
-			{FunctionType: 2, Domain: [2]float64{0, 1}, C0: [3]float64{0, 1, 0}, C1: [3]float64{0, 0, 1}, N: 1},
+			{FunctionType: 2, Domain: [2]float64{0, 1}, C0: []float64{1, 0, 0}, C1: []float64{0, 1, 0}, N: 1},
+			{FunctionType: 2, Domain: [2]float64{0, 1}, C0: []float64{0, 1, 0}, C1: []float64{0, 0, 1}, N: 1},
 		},
 		Bounds: []float64{0.5},
 		Encode: [][2]float64{{0, 1}, {0, 1}},
@@ -189,8 +189,8 @@ func TestWriteShadingPattern2Stop(t *testing.T) {
 			Function: Function{
 				FunctionType: 2,
 				Domain:       [2]float64{0, 1},
-				C0:           [3]float64{1, 0, 0},
-				C1:           [3]float64{0, 0, 1},
+				C0:           []float64{1, 0, 0},
+				C1:           []float64{0, 0, 1},
 				N:            1,
 			},
 		},
@@ -235,5 +235,39 @@ func TestWriteShadingPattern2Stop(t *testing.T) {
 	}
 	if pat.ObjectNumber != 3 {
 		t.Errorf("returned Pattern object number = %d, want 3", pat.ObjectNumber)
+	}
+}
+
+// TestFunctionComponents writes gray and CMYK colors, the number of components
+// comes from the color space of the shading.
+func TestFunctionComponents(t *testing.T) {
+	var buf bytes.Buffer
+	pw := NewPDFWriter(&buf)
+	for _, f := range []Function{
+		{FunctionType: 2, Domain: [2]float64{0, 1}, C0: []float64{0}, C1: []float64{1}, N: 1},
+		{FunctionType: 2, Domain: [2]float64{0, 1}, C0: []float64{1, 0, 0, 0}, C1: []float64{0, 0, 0, 1}, N: 1},
+	} {
+		if _, err := pw.writeFunction(f); err != nil {
+			t.Fatalf("writeFunction: %v", err)
+		}
+	}
+	out := buf.String()
+	for _, want := range []string{"/C0 [0]", "/C1 [1]", "/C0 [1 0 0 0]", "/C1 [0 0 0 1]"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output does not contain %q", want)
+		}
+	}
+}
+
+// TestFunctionColorsMustMatch rejects colors a viewer could not interpolate.
+func TestFunctionColorsMustMatch(t *testing.T) {
+	pw := NewPDFWriter(&bytes.Buffer{})
+	for _, f := range []Function{
+		{FunctionType: 2, C0: []float64{0}, C1: []float64{0, 0, 0}},
+		{FunctionType: 2},
+	} {
+		if _, err := pw.writeFunction(f); err == nil {
+			t.Errorf("expected an error for %v", f)
+		}
 	}
 }
