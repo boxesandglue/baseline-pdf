@@ -92,27 +92,16 @@ type Separation struct {
 
 // Page contains information about a single page.
 type Page struct {
+	Resources
 	Dict          Dict // Additional dictionary entries such as "/Trimbox"
 	contentStream *Object
 	Annotations   []Annotation
-	Faces         []*Face
-	Images        []*Imagefile
-	// Patterns maps a per-page-unique resource name (without the leading
-	// slash) to the indirect Pattern object returned by
-	// PDF.WriteShadingPattern. Entries land in /Resources/Pattern; the
-	// renderer (e.g. svgreader) refers to them as "/<name> scn" inside the
-	// content stream.
-	Patterns map[Name]*Object
-	// ExtGStates maps a resource name (without the leading slash) to the
-	// indirect graphics state parameter dictionary returned by
-	// PDF.WriteExtGState. Entries land in /Resources/ExtGState; content
-	// streams activate them with "/<name> gs".
-	ExtGStates map[Name]*Object
-	Objnum     Objectnumber // The "/Page" object
-	Width      float64
-	Height     float64
-	OffsetX    float64
-	OffsetY    float64
+	Group         *TransparencyGroup // nil for a page without a page group
+	Objnum        Objectnumber       // The "/Page" object
+	Width         float64
+	Height        float64
+	OffsetX       float64
+	OffsetY       float64
 }
 
 // Outline represents PDF bookmarks. To create outlines, you need to assign
@@ -161,6 +150,8 @@ type PDF struct {
 	// keyed by their content-derived ResourceName, so equal parameter sets
 	// are written only once per document. Lazily allocated.
 	extGStates map[Name]*Object
+	// forms holds the Form XObjects of the document in the order of AddForm.
+	forms []*Form
 }
 
 // nextID returns a fresh per-PDF sequence number used for the internal
@@ -329,14 +320,23 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 	var err error
 	usedFaces := make(map[*Face]bool)
 	usedImages := make(map[*Imagefile]bool)
-	// Write all page streams:
-	for _, page := range pw.pages.Pages {
-		for _, img := range page.Images {
+	markUsed := func(r *Resources) {
+		for _, img := range r.Images {
 			usedImages[img] = true
 		}
+		for _, face := range r.Faces {
+			usedFaces[face] = true
+		}
+	}
+	// Write all page streams:
+	for _, page := range pw.pages.Pages {
+		markUsed(&page.Resources)
 		if err = page.contentStream.Save(); err != nil {
 			return 0, err
 		}
+	}
+	for _, form := range pw.forms {
+		markUsed(&form.Resources)
 	}
 
 	// Page streams are finished. Now the /Page dictionaries with
@@ -364,60 +364,16 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		return 0, fmt.Errorf("no pages in document")
 	}
 
+	// The references to images exist only now.
+	for _, form := range pw.forms {
+		if err = form.save(); err != nil {
+			return 0, err
+		}
+	}
+
 	for _, page := range pw.pages.Pages {
 		obj := pw.NewObjectWithNumber(page.Objnum)
-		fnts := Dict{}
-		if len(page.Faces) > 0 {
-			for _, face := range page.Faces {
-				fnts[Name(face.InternalName())] = face.fontobject.ObjectNumber.Ref()
-			}
-		}
-
-		resHash := Dict{}
-		if len(page.Faces) > 0 {
-			for _, face := range page.Faces {
-				usedFaces[face] = true
-			}
-			resHash["Font"] = fnts
-		}
-		if len(pw.Colorspaces) > 0 || pw.DefaultRGB != 0 {
-			colorspace := Dict{}
-
-			for _, cs := range pw.Colorspaces {
-				colorspace[Name(cs.ID)] = cs.Obj.Ref()
-			}
-			if pw.DefaultRGB != 0 {
-				colorspace["DefaultRGB"] = pw.DefaultRGB.Ref()
-			}
-			resHash["ColorSpace"] = colorspace
-		}
-		if len(page.Images) > 0 {
-			xo := Dict{}
-			for _, img := range page.Images {
-				xo[Name(img.InternalName())] = img.imageobject.ObjectNumber.Ref()
-			}
-			resHash["XObject"] = xo
-		}
-		// Shading patterns produced by WriteShadingPattern. Pattern names
-		// are passed through verbatim; the SVG renderer reuses the same
-		// names in the page content stream.
-		if len(page.Patterns) > 0 {
-			pat := Dict{}
-			for name, obj := range page.Patterns {
-				pat[name] = obj.ObjectNumber.Ref()
-			}
-			resHash["Pattern"] = pat
-		}
-		// Graphics state parameter dictionaries written by WriteExtGState.
-		// Names are passed through verbatim; content streams activate them
-		// with "/<name> gs".
-		if len(page.ExtGStates) > 0 {
-			gsDict := Dict{}
-			for name, obj := range page.ExtGStates {
-				gsDict[name] = obj.ObjectNumber.Ref()
-			}
-			resHash["ExtGState"] = gsDict
-		}
+		resHash := pw.resourceDict(&page.Resources)
 		pageHash := Dict{
 			"Type":     "/Page",
 			"Contents": page.contentStream.ObjectNumber.Ref(),
@@ -438,6 +394,9 @@ func (pw *PDF) writeDocumentCatalogAndPages() (Objectnumber, error) {
 		}
 		if len(resHash) > 0 {
 			pageHash["Resources"] = resHash
+		}
+		if page.Group != nil {
+			pageHash["Group"] = page.Group.dict()
 		}
 
 		annotationObjectNumbers := make([]string, len(page.Annotations))

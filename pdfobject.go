@@ -299,7 +299,7 @@ func (obj *Object) Save() error {
 		}
 		obj.pdfwriter.pos += int64(n)
 	}
-	if obj.Data.Len() > 0 {
+	if hasData {
 		n, err := fmt.Fprintln(obj.pdfwriter.outfile, "\nstream")
 		if err != nil {
 			return err
