@@ -30,15 +30,37 @@ type Function struct {
 	Encode       [][2]float64 // len = len(SubFunctions)
 }
 
-// Shading describes a PDF Shading Dictionary (Section 8.7.4.5).
-// Only Type 2 (axial) is implemented; Type 3 (radial) is intentionally left
-// out until there is a need.
+// Shading describes a PDF Shading Dictionary (Section 8.7.4.5), either Type 2
+// (axial) or Type 3 (radial).
 type Shading struct {
-	ShadingType int        // 2 = axial (linear)
-	ColorSpace  Name       // "/DeviceRGB" (default), "/DeviceGray", "/DeviceCMYK"
-	Coords      [4]float64 // x1 y1 x2 y2 in pattern space
-	Function    Function
-	Extend      [2]bool // [extendStart extendEnd]
+	ShadingType int  // 2 = axial (linear), 3 = radial
+	ColorSpace  Name // "/DeviceRGB" (default), "/DeviceGray", "/DeviceCMYK"
+	// Coords are in pattern space. Type 2 takes x0 y0 x1 y1, the two ends of
+	// the axis. Type 3 takes x0 y0 r0 x1 y1 r1, the start and the end circle,
+	// with r0 and r1 not negative.
+	Coords   []float64
+	Function Function
+	Extend   [2]bool // [extendStart extendEnd]
+}
+
+// checkCoords tells whether Coords has the shape ShadingType asks for.
+func (s Shading) checkCoords() error {
+	switch s.ShadingType {
+	case 2:
+		if len(s.Coords) != 4 {
+			return fmt.Errorf("pdf: axial shading needs 4 coordinates, got %d", len(s.Coords))
+		}
+	case 3:
+		if len(s.Coords) != 6 {
+			return fmt.Errorf("pdf: radial shading needs 6 coordinates, got %d", len(s.Coords))
+		}
+		if s.Coords[2] < 0 || s.Coords[5] < 0 {
+			return fmt.Errorf("pdf: radial shading has a negative radius (%g, %g)", s.Coords[2], s.Coords[5])
+		}
+	default:
+		return fmt.Errorf("pdf: unsupported ShadingType %d", s.ShadingType)
+	}
+	return nil
 }
 
 // ShadingPattern describes a PDF Pattern Dictionary of type 2 (Shading
@@ -57,6 +79,9 @@ type ShadingPattern struct {
 // objects too, since /Functions in a Type 3 Function dictionary is an array
 // of indirect references.
 func (pw *PDF) WriteShadingPattern(p ShadingPattern) (*Object, error) {
+	if err := p.Shading.checkCoords(); err != nil {
+		return nil, err
+	}
 	funcObj, err := pw.writeFunction(p.Shading.Function)
 	if err != nil {
 		return nil, err
@@ -83,13 +108,9 @@ func (pw *PDF) WriteShadingPattern(p ShadingPattern) (*Object, error) {
 	shadingObj.Dictionary = Dict{
 		"ShadingType": fmt.Sprintf("%d", p.Shading.ShadingType),
 		"ColorSpace":  string(cs),
-		"Coords": fmt.Sprintf("[%s %s %s %s]",
-			fmtPDFFloat(p.Shading.Coords[0]),
-			fmtPDFFloat(p.Shading.Coords[1]),
-			fmtPDFFloat(p.Shading.Coords[2]),
-			fmtPDFFloat(p.Shading.Coords[3])),
-		"Function": funcObj.ObjectNumber.Ref(),
-		"Extend":   fmt.Sprintf("[%s %s]", extendStart, extendEnd),
+		"Coords":      numberArray(p.Shading.Coords),
+		"Function":    funcObj.ObjectNumber.Ref(),
+		"Extend":      fmt.Sprintf("[%s %s]", extendStart, extendEnd),
 	}
 	if err := shadingObj.Save(); err != nil {
 		return nil, err

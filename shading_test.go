@@ -185,7 +185,7 @@ func TestWriteShadingPattern2Stop(t *testing.T) {
 		Shading: Shading{
 			ShadingType: 2,
 			ColorSpace:  "/DeviceRGB",
-			Coords:      [4]float64{0, 0, 100, 0},
+			Coords:      []float64{0, 0, 100, 0},
 			Function: Function{
 				FunctionType: 2,
 				Domain:       [2]float64{0, 1},
@@ -293,12 +293,85 @@ func TestShadingUsesDefaultRGB(t *testing.T) {
 		if td.colorspace == "/DeviceGray" {
 			fn.C0, fn.C1 = []float64{0}, []float64{1}
 		}
-		_, err := pw.WriteShadingPattern(ShadingPattern{Shading: Shading{ShadingType: 2, ColorSpace: td.colorspace, Function: fn}})
+		_, err := pw.WriteShadingPattern(ShadingPattern{Shading: Shading{ShadingType: 2, ColorSpace: td.colorspace, Coords: []float64{0, 0, 1, 0}, Function: fn}})
 		if err != nil {
 			t.Fatalf("WriteShadingPattern: %v", err)
 		}
 		if !strings.Contains(buf.String(), td.want) {
 			t.Errorf("%q: output does not contain %q\n%s", td.colorspace, td.want, buf.String())
 		}
+	}
+}
+
+func TestWriteShadingPatternRadial(t *testing.T) {
+	pw, buf := newTestPDF()
+	_, err := pw.WriteShadingPattern(ShadingPattern{
+		Shading: Shading{
+			ShadingType: 3,
+			ColorSpace:  "/DeviceRGB",
+			Coords:      []float64{40, 50, 0, 50, 50, 42.5},
+			Function: Function{
+				FunctionType: 2,
+				Domain:       [2]float64{0, 1},
+				C0:           []float64{1, 0, 0},
+				C1:           []float64{0, 0, 1},
+				N:            1,
+			},
+			Extend: [2]bool{true, true},
+		},
+		Matrix: [6]float64{1, 0, 0, 1, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("WriteShadingPattern: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"/ShadingType 3",
+		"/Coords [40 50 0 50 50 42.5]",
+		"/Extend [true true]",
+		"/PatternType 2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteShadingPatternChecksCoords(t *testing.T) {
+	testdata := []struct {
+		name        string
+		shadingType int
+		coords      []float64
+		wantErr     string
+	}{
+		{"axial without coordinates", 2, nil, "needs 4 coordinates"},
+		{"axial with the radial shape", 2, []float64{0, 0, 0, 1, 1, 1}, "needs 4 coordinates"},
+		{"radial with the axial shape", 3, []float64{0, 0, 1, 1}, "needs 6 coordinates"},
+		{"radial start radius", 3, []float64{0, 0, -1, 0, 0, 1}, "negative radius"},
+		{"radial end radius", 3, []float64{0, 0, 0, 0, 0, -1}, "negative radius"},
+		{"unknown type", 1, []float64{0, 0, 1, 1}, "unsupported ShadingType"},
+	}
+	for _, td := range testdata {
+		t.Run(td.name, func(t *testing.T) {
+			pw, buf := newTestPDF()
+			before := buf.Len()
+			_, err := pw.WriteShadingPattern(ShadingPattern{Shading: Shading{
+				ShadingType: td.shadingType,
+				Coords:      td.coords,
+				Function: Function{
+					FunctionType: 2,
+					Domain:       [2]float64{0, 1},
+					C0:           []float64{0},
+					C1:           []float64{1},
+					N:            1,
+				},
+			}})
+			if err == nil || !strings.Contains(err.Error(), td.wantErr) {
+				t.Fatalf("error = %v, want %q", err, td.wantErr)
+			}
+			if buf.Len() != before {
+				t.Errorf("a rejected shading wrote output:\n%s", buf.String())
+			}
+		})
 	}
 }
